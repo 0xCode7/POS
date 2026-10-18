@@ -224,7 +224,7 @@ describe('backup, restore, and reliability', () => {
     ).toMatchObject({ directory: selected });
   });
 
-  it('rejects unsafe, read-only, and environment-managed backup directory changes', async () => {
+  it('rejects unsafe, unwritable or non-directory, and environment-managed backup directory changes', async () => {
     const service = new BackupService(database);
     const app = createApp({
       database,
@@ -254,11 +254,23 @@ describe('backup, restore, and reliability', () => {
       .expect(400);
     const readOnly = path.join(directory, 'read-only');
     fs.mkdirSync(readOnly, { mode: 0o500 });
-    await agent
-      .patch('/api/admin/backups/settings')
-      .set(csrf)
-      .send({ directory: readOnly })
-      .expect(400);
+    if (process.platform === 'win32') {
+      // Windows does not enforce POSIX directory modes such as 0500. Use an
+      // existing file instead, which reliably cannot become a backup folder.
+      const nonDirectory = path.join(directory, 'not-a-directory');
+      fs.writeFileSync(nonDirectory, 'not a directory');
+      await agent
+        .patch('/api/admin/backups/settings')
+        .set(csrf)
+        .send({ directory: nonDirectory })
+        .expect(400);
+    } else {
+      await agent
+        .patch('/api/admin/backups/settings')
+        .set(csrf)
+        .send({ directory: readOnly })
+        .expect(400);
+    }
 
     process.env.POS_BACKUP_DIR = backupDirectory;
     const managed = new BackupService(database);
