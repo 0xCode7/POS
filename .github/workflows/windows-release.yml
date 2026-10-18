@@ -42,10 +42,10 @@ jobs:
       - name: Install Inno Setup
         shell: powershell
         run: |
-          choco install innosetup --version=6.5.4 --yes --no-progress --limit-output
-          $compiler = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
-          if (-not $compiler) {
-            $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          choco install innosetup --version=6.5.4 --allow-downgrade --force --yes --no-progress --limit-output
+          $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            $compiler = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
           }
           if (-not (Test-Path -LiteralPath $compiler)) {
             throw "Inno Setup compiler was not found: $compiler"

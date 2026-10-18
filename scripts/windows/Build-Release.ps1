@@ -25,10 +25,10 @@ function Find-Iscc([string]$Configured) {
     if (-not (Test-Path -LiteralPath $Configured)) { Fail "Inno Setup compiler was not found: $Configured" }
     return [IO.Path]::GetFullPath($Configured)
   }
-  $command = Get-Command iscc.exe -ErrorAction SilentlyContinue
-  if ($command) { return $command.Source }
   $default = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
   if (Test-Path -LiteralPath $default) { return $default }
+  $command = Get-Command iscc.exe -ErrorAction SilentlyContinue
+  if ($command) { return $command.Source }
   Fail 'Inno Setup 6 is required. Install it on the Windows release machine, then retry.'
 }
 
