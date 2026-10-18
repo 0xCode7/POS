@@ -102,13 +102,18 @@ if (phase === 'seed') {
 }
 '@ | Set-Content -LiteralPath $flow -Encoding utf8
 
+$serverMayBeRunning = $false
 try {
   & $start -DataDirectory $data -Port $Port -NoBrowser
+  $serverMayBeRunning = $true
   Invoke-Node $node $flow @("http://127.0.0.1:$Port", $backups, (Join-Path $test 'state.json'), 'seed') @{ POS_PORTABLE_TEST_USERNAME = $username; POS_PORTABLE_TEST_PASSWORD = $password }
   & $stop -DataDirectory $data
+  $serverMayBeRunning = $false
   & $start -DataDirectory $data -Port $Port -NoBrowser
+  $serverMayBeRunning = $true
   Invoke-Node $node $flow @("http://127.0.0.1:$Port", $backups, (Join-Path $test 'state.json'), 'restore') @{ POS_PORTABLE_TEST_USERNAME = $username; POS_PORTABLE_TEST_PASSWORD = $password }
   & $stop -DataDirectory $data
+  $serverMayBeRunning = $false
   Write-Host "Automated portable checks passed. Isolated test directory: $test"
   if ($InteractiveDesktopChecks) {
     Write-Host 'Interactive checks still required: start the app, sign in with a disposable admin, use Choose Folder and Open Backup Folder, then visually confirm the real Windows dialogs. Disconnect the Windows host from external networks and repeat startup, login, checkout, backup, restore, and reporting. This script does not claim those GUI/offline-network checks passed.'
@@ -116,5 +121,8 @@ try {
 } finally {
   Remove-Item Env:POS_PORTABLE_TEST_USERNAME -ErrorAction SilentlyContinue
   Remove-Item Env:POS_PORTABLE_TEST_PASSWORD -ErrorAction SilentlyContinue
+  if ($serverMayBeRunning) {
+    try { & $stop -DataDirectory $data } catch { Write-Warning 'Portable test cleanup could not stop the disposable Supervisor.' }
+  }
   if (-not $KeepTestData -and (Test-Path -LiteralPath $test)) { Remove-Item -LiteralPath $test -Recurse -Force }
 }

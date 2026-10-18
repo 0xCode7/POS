@@ -34,6 +34,7 @@ $profile = Join-Path $test 'user-profile'
 $data = Join-Path $profile 'RestaurantPOS\data'
 New-Item -ItemType Directory -Path $test, $profile -Force | Out-Null
 $oldLocalAppData = $env:LOCALAPPDATA
+$launcherMayBeRunning = $false
 
 try {
   $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/TASKS="desktopicon"', "/DIR=`"$install`"")
@@ -48,7 +49,10 @@ try {
     if (-not (Test-Path -LiteralPath $required)) { Fail "installer omitted required file: $required" }
   }
 
-  # Exercise the installed desktop shortcut without touching the real user profile.
+  # Verify the installed desktop shortcut's target. Launching a .lnk through the
+  # Windows shell requires an interactive desktop and can retain a handle to the
+  # installation directory in a hosted CI session. The launcher itself is tested
+  # below with an explicit, disposable data directory.
   $env:LOCALAPPDATA = $profile
   $shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Restaurant POS.lnk'
   if (-not (Test-Path -LiteralPath $shortcut)) { Fail 'desktop shortcut was not created.' }
@@ -57,9 +61,11 @@ try {
   if ([IO.Path]::GetFullPath($shortcutTarget) -ne [IO.Path]::GetFullPath((Join-Path $install 'Launch-RestaurantPOS.vbs'))) {
     Fail 'desktop shortcut does not target this disposable installation.'
   }
-  Start-Process -FilePath $shortcut
+  & (Join-Path $install 'Start-RestaurantPOS.ps1') -DataDirectory $data -Port 3000 -NoBrowser
+  $launcherMayBeRunning = $true
   Wait-Health 3000
   & (Join-Path $install 'Stop-RestaurantPOS.ps1') -DataDirectory $data
+  $launcherMayBeRunning = $false
 
   # This creates a random disposable admin, paid order, receipt, backup, restore,
   # session invalidation, and graceful restart through the installed distribution.
@@ -84,5 +90,12 @@ try {
   Write-Host "Installer acceptance test passed. Disposable test root: $test"
 } finally {
   $env:LOCALAPPDATA = $oldLocalAppData
+  if ($launcherMayBeRunning -and (Test-Path -LiteralPath $install)) {
+    try {
+      & (Join-Path $install 'Stop-RestaurantPOS.ps1') -DataDirectory $data
+    } catch {
+      Write-Warning 'Installer test cleanup could not stop the disposable Supervisor.'
+    }
+  }
   if (-not $KeepTestData -and (Test-Path -LiteralPath $test)) { Remove-Item -LiteralPath $test -Recurse -Force }
 }
