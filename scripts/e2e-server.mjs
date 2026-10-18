@@ -7,7 +7,8 @@ import process from 'node:process';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'restaurant-pos-e2e-'));
 const data = path.join(root, 'data');
 const backups = path.join(root, 'backups');
-const child = spawn('npm', ['start'], {
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const child = spawn(npmCommand, ['start'], {
   cwd: process.cwd(),
   env: {
     ...process.env,
