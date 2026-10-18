@@ -50,11 +50,17 @@ if ((Test-Path -LiteralPath $release) -and -not $Force) {
   Fail "release output already exists: $release. Use -Force only after preserving the required artifact."
 }
 
-$portableArguments = @('-SourceRoot', $source, '-OutputDirectory', $portable, '-ReleaseVersion', $ReleaseVersion, '-Force')
-if ($NodeZip) {
-  $portableArguments += @('-NodeZip', [IO.Path]::GetFullPath($NodeZip), '-NodeZipSha256', $NodeZipSha256)
+$portableArguments = @{
+  SourceRoot = $source
+  OutputDirectory = $portable
+  ReleaseVersion = $ReleaseVersion
+  Force = $true
 }
-if ($NpmCache) { $portableArguments += @('-NpmCache', [IO.Path]::GetFullPath($NpmCache)) }
+if ($NodeZip) {
+  $portableArguments.NodeZip = [IO.Path]::GetFullPath($NodeZip)
+  $portableArguments.NodeZipSha256 = $NodeZipSha256
+}
+if ($NpmCache) { $portableArguments.NpmCache = [IO.Path]::GetFullPath($NpmCache) }
 & (Join-Path $PSScriptRoot 'Build-Portable.ps1') @portableArguments
 if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { Fail 'portable build failed.' }
 foreach ($required in @(
