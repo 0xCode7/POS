@@ -50,11 +50,11 @@ jobs:
           if (-not (Test-Path -LiteralPath $compiler)) {
             throw "Inno Setup compiler was not found: $compiler"
           }
-          $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($compiler).ProductVersion
-          if ($version -notmatch '^6\.5\.4') {
-            throw "Expected Inno Setup 6.5.4, found $version at $compiler"
+          $installed = choco list --local-only innosetup --exact --limit-output
+          if ($installed -notmatch '^innosetup\|6\.5\.4$') {
+            throw "Expected Chocolatey package innosetup|6.5.4, found: $installed"
           }
-          Write-Host "Verified Inno Setup $version at $compiler"
+          Write-Host "Verified Inno Setup 6.5.4 at $compiler"
 
       - name: Build portable ZIP and Setup.exe
         shell: powershell
