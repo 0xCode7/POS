@@ -1,0 +1,101 @@
+name: Windows release verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Numeric release version (defaults to package.json)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configure Node.js 24.13.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Run source checks
+        run: npm run check
+
+      - name: Run Chromium workflow
+        run: npm run test:e2e
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup --version=6.5.4 --yes --no-progress --limit-output
+          $compiler = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if (-not $compiler) {
+            $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          }
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            throw "Inno Setup compiler was not found: $compiler"
+          }
+          $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($compiler).ProductVersion
+          if ($version -notmatch '^6\.5\.4') {
+            throw "Expected Inno Setup 6.5.4, found $version at $compiler"
+          }
+          Write-Host "Verified Inno Setup $version at $compiler"
+
+      - name: Build portable ZIP and Setup.exe
+        shell: powershell
+        run: |
+          $version = '${{ inputs.release_version }}'
+          if ($version) {
+            .\scripts\windows\Build-Release.ps1 -ReleaseVersion $version -Force
+          } else {
+            .\scripts\windows\Build-Release.ps1 -Force
+          }
+
+      - name: Verify release files and SHA-256 checksums
+        shell: powershell
+        run: |
+          $release = Join-Path $PWD 'release\windows'
+          $expected = @{}
+          foreach ($line in Get-Content (Join-Path $release 'SHA256SUMS.txt')) {
+            if ($line -match '^([a-f0-9]{64}) \*(.+)$') {
+              $expected[$Matches[2]] = $Matches[1]
+            } else {
+              throw "Invalid checksum line: $line"
+            }
+          }
+          foreach ($name in @('RestaurantPOS-Portable.zip', 'RestaurantPOS-Setup.exe')) {
+            $file = Join-Path $release $name
+            if (-not (Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -le 0) {
+              throw "Missing or empty release artifact: $file"
+            }
+            $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($expected[$name] -ne $actual) { throw "SHA-256 mismatch for $name" }
+            Write-Host "$name $actual"
+          }
+
+      - name: Verify installed release with disposable data
+        shell: powershell
+        run: .\scripts\windows\Test-Installer.ps1
+
+      - name: Publish artifacts and checksums
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: RestaurantPOS-Windows-x64
+          path: |
+            release/windows/RestaurantPOS-Portable.zip
+            release/windows/RestaurantPOS-Setup.exe
+            release/windows/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
