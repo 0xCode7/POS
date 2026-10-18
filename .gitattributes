@@ -1,0 +1,7 @@
+# Keep all source, workflow, documentation, and installer scripts on LF. This
+# prevents a Windows checkout from changing Prettier-checked files to CRLF.
+* text=auto eol=lf
+
+# Preserve packaged image assets byte-for-byte.
+*.jpeg binary
+*.png binary
