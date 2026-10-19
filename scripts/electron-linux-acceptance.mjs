@@ -110,7 +110,10 @@ async function waitForStoppedHealth() {
 
 async function launch() {
   desktop = await electron.launch({
-    args: ['.'],
+    // GitHub-hosted Linux runners do not provide Chromium's setuid sandbox.
+    // This is limited to the isolated CI acceptance process; packaged apps
+    // retain Electron's normal sandbox configuration for real users.
+    args: process.platform === 'linux' ? ['--no-sandbox', '.'] : ['.'],
     cwd: desktopDirectory,
     env: environment,
   });
