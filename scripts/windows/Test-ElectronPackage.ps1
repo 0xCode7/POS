@@ -94,9 +94,23 @@ const argon2 = require(path.join(application, 'node_modules', 'argon2'));
   $previousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
   try {
     $env:ELECTRON_RUN_AS_NODE = '1'
-    & $runtime $probe $app
-    if ($LASTEXITCODE -ne 0) {
-      throw "Packaged Electron runtime failed to load Windows native dependencies (exit $LASTEXITCODE)."
+    # PowerShell does not reliably wait for a GUI-subsystem executable invoked
+    # with the call operator. Electron is one, even when ELECTRON_RUN_AS_NODE
+    # makes it execute this short-lived verification script. Start-Process with
+    # -Wait gives us the real exit code and captures a useful diagnostic.
+    $stdout = Join-Path $portableCheck 'native-probe.stdout.log'
+    $stderr = Join-Path $portableCheck 'native-probe.stderr.log'
+    $process = Start-Process -FilePath $runtime `
+      -ArgumentList @("`"$probe`"", "`"$app`"") `
+      -NoNewWindow -Wait -PassThru `
+      -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if ($process.ExitCode -ne 0) {
+      $diagnostic = @($stdout, $stderr) |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        ForEach-Object { Get-Content -LiteralPath $_ -Raw } |
+        Where-Object { $_.Trim() } |
+        Join-String -Separator [Environment]::NewLine
+      throw "Packaged Electron runtime failed to load Windows native dependencies (exit $($process.ExitCode)). $diagnostic"
     }
   } finally {
     if ($null -eq $previousElectronRunAsNode) { Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue }
