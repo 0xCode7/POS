@@ -13,6 +13,7 @@ if (-not (Test-Path -LiteralPath $setup)) {
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("restaurant-pos-installer-" + [guid]::NewGuid())
 $installDirectory = Join-Path $testRoot 'installed-app'
 $dataRoot = Join-Path $testRoot 'acceptance-data'
+$preExistingShortcutPaths = @()
 $shortcutLocations = @(
   [pscustomobject]@{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
   [pscustomobject]@{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory) }
@@ -40,24 +41,15 @@ function Get-ShortcutTarget([string] $shortcutPath) {
   }
 }
 
-function Get-InstalledShortcuts([string] $runtime) {
-  $canonicalRuntime = [System.IO.Path]::GetFullPath($runtime)
+function Get-InstalledShortcuts {
   $matches = @()
   foreach ($location in $shortcutLocations) {
-    if (-not (Test-Path -LiteralPath $location.Directory)) { continue }
-    foreach ($shortcut in Get-ChildItem -LiteralPath $location.Directory -Filter '*.lnk' -File -Recurse -ErrorAction SilentlyContinue) {
-      try {
-        $target = Get-ShortcutTarget $shortcut.FullName
-        if ([System.IO.Path]::GetFullPath($target) -ieq $canonicalRuntime) {
-          $matches += [pscustomobject]@{
-            Kind = $location.Kind
-            Path = $shortcut.FullName
-            Target = $target
-          }
-        }
-      } catch {
-        # An unrelated malformed shortcut must not affect the disposable test.
-      }
+    $shortcut = Join-Path $location.Directory 'مطعم أفندينا.lnk'
+    if (-not (Test-Path -LiteralPath $shortcut)) { continue }
+    $matches += [pscustomobject]@{
+      Kind = $location.Kind
+      Path = $shortcut
+      Target = Get-ShortcutTarget $shortcut
     }
   }
   return $matches
@@ -75,6 +67,68 @@ function Write-ShortcutDiagnostics {
           Write-Host "    $($_.FullName) -> $target"
         }
     }
+  }
+}
+
+function Wait-ForHealth([int] $port, [int] $timeoutSeconds = 30) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+  do {
+    try {
+      $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 2
+      if ($response.StatusCode -eq 200) { return }
+    } catch {}
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $deadline)
+  throw "The installed shortcut did not start the local health service on port $port."
+}
+
+function Wait-ForHealthStop([int] $port, [int] $timeoutSeconds = 20) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+  do {
+    try {
+      Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 2 | Out-Null
+    } catch {
+      return
+    }
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $deadline)
+  throw "The shortcut-managed local service remained active after its test process exited."
+}
+
+function Invoke-ShortcutStartup([object] $desktopShortcut, [object] $startMenuShortcut) {
+  $port = 45430
+  $previousPort = $env:POS_ELECTRON_PORT
+  $previousLocalAppData = $env:LOCALAPPDATA
+  $shortcutData = Join-Path $testRoot 'shortcut-local-app-data'
+  $runtime = Join-Path $installDirectory 'RestaurantPOS.exe'
+  $managedPid = $null
+  try {
+    $env:POS_ELECTRON_PORT = $port
+    $env:LOCALAPPDATA = $shortcutData
+    $process = Start-Process -FilePath $desktopShortcut.Path -PassThru
+    Wait-ForHealth $port
+    # The Start Menu shortcut must direct activation to the existing Electron
+    # instance rather than launching another Supervisor/backend.
+    Start-Process -FilePath $startMenuShortcut.Path | Out-Null
+    Start-Sleep -Milliseconds 750
+    Wait-ForHealth $port
+    $candidates = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq [System.IO.Path]::GetFullPath($runtime)) })
+    $managedPid = ($candidates | Sort-Object CreationDate | Select-Object -First 1).ProcessId
+    if (-not $managedPid) {
+      throw 'The shortcut started health but no installed Electron process could be identified safely.'
+    }
+  } finally {
+    if ($managedPid) {
+      # This is the direct child launched from the disposable shortcut; /t is
+      # confined to its own Electron/Supervisor child tree.
+      & taskkill.exe /pid $managedPid /t /f | Out-Null
+    }
+    Wait-ForHealthStop $port
+    if ($null -eq $previousPort) { Remove-Item Env:POS_ELECTRON_PORT -ErrorAction SilentlyContinue }
+    else { $env:POS_ELECTRON_PORT = $previousPort }
+    if ($null -eq $previousLocalAppData) { Remove-Item Env:LOCALAPPDATA -ErrorAction SilentlyContinue }
+    else { $env:LOCALAPPDATA = $previousLocalAppData }
   }
 }
 
@@ -117,19 +171,21 @@ function Invoke-Acceptance([bool] $verifyExisting) {
 
 try {
   New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+  $preExistingShortcutPaths = @(Get-InstalledShortcuts | ForEach-Object Path)
   Invoke-Setup
 
   $runtime = Join-Path $installDirectory 'RestaurantPOS.exe'
   if (-not (Test-Path -LiteralPath $runtime)) {
     throw "The installed Electron executable is missing: $runtime"
   }
-  $shortcuts = @(Get-InstalledShortcuts $runtime)
+  $shortcuts = @(Get-InstalledShortcuts)
   $desktopShortcut = $shortcuts | Where-Object Kind -eq 'desktop' | Select-Object -First 1
   $startMenuShortcut = $shortcuts | Where-Object Kind -eq 'start-menu' | Select-Object -First 1
   if (-not $desktopShortcut -or -not $startMenuShortcut) {
     Write-ShortcutDiagnostics
-    throw "Expected a desktop and a Start Menu shortcut targeting the installed executable; found desktop=$([bool]$desktopShortcut), start-menu=$([bool]$startMenuShortcut)."
+    throw "Expected a desktop and a Start Menu shortcut; found desktop=$([bool]$desktopShortcut), start-menu=$([bool]$startMenuShortcut)."
   }
+  Invoke-ShortcutStartup $desktopShortcut $startMenuShortcut
 
   Invoke-Acceptance $false
   $database = Join-Path $dataRoot 'local-app-data\RestaurantPOS\data\restaurant-pos.sqlite'
@@ -153,7 +209,8 @@ try {
   # Remove only the disposable CI installation and its shortcuts. Never target
   # an arbitrary user installation or data directory.
   if (Test-Path -LiteralPath $installDirectory) {
-    Get-InstalledShortcuts (Join-Path $installDirectory 'RestaurantPOS.exe') |
+    Get-InstalledShortcuts |
+      Where-Object { $_.Path -notin $preExistingShortcutPaths } |
       ForEach-Object { Remove-Item -LiteralPath $_.Path -Force -ErrorAction SilentlyContinue }
   }
   Remove-Item -LiteralPath $testRoot -Force -Recurse -ErrorAction SilentlyContinue

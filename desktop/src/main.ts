@@ -436,15 +436,11 @@ async function stopBackend() {
 
 const ownsDesktopInstance = app.requestSingleInstanceLock();
 if (!ownsDesktopInstance) {
-  void app.whenReady().then(async () => {
-    await dialog.showMessageBox({
-      type: 'info',
-      title: 'مطعم أفندينا يعمل بالفعل',
-      message: 'التطبيق مفتوح بالفعل. استخدم النافذة الحالية.',
-      buttons: ['حسنًا'],
-    });
-    app.quit();
-  });
+  // A second shortcut activation is normal: Electron notifies the primary
+  // process through `second-instance`, which focuses its window below. The
+  // short-lived secondary process exits quietly so it cannot create another
+  // Supervisor/backend or block on a dialog in a non-interactive session.
+  void app.whenReady().then(() => app.quit());
 } else {
   app.on('second-instance', () => {
     if (!mainWindow) return;
