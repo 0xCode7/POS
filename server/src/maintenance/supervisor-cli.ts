@@ -211,7 +211,9 @@ async function stopBackend() {
       '/f',
     ]);
     if (result.status !== 0 && result.status !== 128) {
-      throw new Error('تعذر إنهاء عملية الخدمة المُدارة في Windows.');
+      throw new Error('تعذر إنهاء عملية الخدمة المُدارة في Windows.', {
+        cause: error,
+      });
     }
     await waitForBackendExit(stopping, 10_000);
   }
