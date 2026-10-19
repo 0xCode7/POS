@@ -11,6 +11,20 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Fail([string]$Message) { throw "Installer test: $Message" }
+function Remove-TestRoot([string]$Path) {
+  $lastError = $null
+  foreach ($attempt in 1..15) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    try {
+      Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+      return
+    } catch {
+      $lastError = $_
+      Start-Sleep -Seconds 2
+    }
+  }
+  throw "Installer test cleanup could not release $Path after 30 seconds. $($lastError.Exception.Message)"
+}
 function Wait-Health([int]$ProbePort) {
   $deadline = [DateTime]::UtcNow.AddSeconds(40)
   while ([DateTime]::UtcNow -lt $deadline) {
@@ -97,5 +111,5 @@ try {
       Write-Warning 'Installer test cleanup could not stop the disposable Supervisor.'
     }
   }
-  if (-not $KeepTestData -and (Test-Path -LiteralPath $test)) { Remove-Item -LiteralPath $test -Recurse -Force }
+  if (-not $KeepTestData) { Remove-TestRoot $test }
 }

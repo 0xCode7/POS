@@ -12,6 +12,20 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Fail([string]$Message) { throw "Portable Windows test: $Message" }
+function Remove-TestRoot([string]$Path) {
+  $lastError = $null
+  foreach ($attempt in 1..15) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    try {
+      Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+      return
+    } catch {
+      $lastError = $_
+      Start-Sleep -Seconds 2
+    }
+  }
+  throw "Portable Windows test cleanup could not release $Path after 30 seconds. $($lastError.Exception.Message)"
+}
 function Invoke-Node([string]$Node, [string]$Script, [string[]]$Arguments, [hashtable]$Environment) {
   foreach ($entry in $Environment.GetEnumerator()) { Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value }
   & $Node $Script @Arguments
@@ -124,5 +138,5 @@ try {
   if ($serverMayBeRunning) {
     try { & $stop -DataDirectory $data } catch { Write-Warning 'Portable test cleanup could not stop the disposable Supervisor.' }
   }
-  if (-not $KeepTestData -and (Test-Path -LiteralPath $test)) { Remove-Item -LiteralPath $test -Recurse -Force }
+  if (-not $KeepTestData) { Remove-TestRoot $test }
 }
