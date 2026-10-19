@@ -89,16 +89,56 @@ export class ApiError extends Error {
     super(message);
   }
 }
+
+export class ApiConnectionError extends Error {
+  constructor() {
+    super(
+      'تعذر الاتصال بالخدمة المحلية. تحقق من تشغيل التطبيق ثم أعد تحميل الصفحة أو أعد تشغيله.',
+    );
+  }
+}
+
+function apiUrl(path: string) {
+  const url = new URL(path, window.location.origin);
+  if (
+    url.origin !== window.location.origin ||
+    !url.pathname.startsWith('/api/')
+  )
+    throw new Error('مسار API محلي غير صالح.');
+  return url;
+}
+
+function reportApiDiagnostic(input: {
+  path: string;
+  kind: 'request' | 'response' | 'network-error';
+  status?: number;
+}) {
+  window.restaurantDesktop?.reportApiDiagnostic(input);
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const url = apiUrl(path);
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   if (init.body) headers.set('Content-Type', 'application/json');
   if (init.method && init.method !== 'GET')
     headers.set('X-CSRF-Protection', '1');
-  const response = await fetch(path, {
-    ...init,
-    headers,
-    credentials: 'same-origin',
+  reportApiDiagnostic({ path: url.pathname, kind: 'request' });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers,
+      credentials: 'same-origin',
+    });
+  } catch {
+    reportApiDiagnostic({ path: url.pathname, kind: 'network-error' });
+    throw new ApiConnectionError();
+  }
+  reportApiDiagnostic({
+    path: url.pathname,
+    kind: 'response',
+    status: response.status,
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as {
@@ -115,5 +155,6 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     : (response.json() as Promise<T>);
 }
 export function errorMessage(error: unknown) {
+  if (error instanceof ApiConnectionError) return error.message;
   return error instanceof Error ? error.message : 'حدث خطأ غير متوقع.';
 }

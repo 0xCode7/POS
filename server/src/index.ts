@@ -22,7 +22,10 @@ fs.mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
 const releaseRuntimeLock = acquireRuntimeLock(dataDirectory, 'server');
 const database = openDatabase({ dataDirectory });
 const backups = new BackupService(database);
-const logger = new LocalLogger(database.filename);
+const configuredLogDirectory = process.env.POS_LOG_DIR;
+if (configuredLogDirectory && !path.isAbsolute(configuredLogDirectory))
+  throw new Error('POS_LOG_DIR must be an absolute path.');
+const logger = new LocalLogger(database.filename, configuredLogDirectory);
 backups.startAutomatic();
 logger.info('server_starting', `Listening on ${LOOPBACK_HOST}:${port}`);
 const expiredSessions = new AuthService(database).cleanupExpiredSessions();

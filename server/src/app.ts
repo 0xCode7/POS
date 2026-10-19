@@ -53,6 +53,15 @@ export function createApp(options: AppOptions = {}) {
     response.set('Cache-Control', 'no-store');
     next();
   });
+  app.use('/api', (request, response, next) => {
+    response.once('finish', () =>
+      options.logger?.info(
+        'api_request',
+        `${request.method} ${request.path} status=${response.statusCode}`,
+      ),
+    );
+    next();
+  });
   app.get('/api/health', (_request, response) =>
     response.json({
       status: 'ok',

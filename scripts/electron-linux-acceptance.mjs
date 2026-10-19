@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
+import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,13 @@ const rootDirectory = path.resolve(
   '..',
 );
 const desktopDirectory = path.join(rootDirectory, 'desktop');
+const packagedElectron = process.env.POS_PACKAGED_ELECTRON_EXECUTABLE;
+if (packagedElectron && !path.isAbsolute(packagedElectron))
+  throw new Error('POS_PACKAGED_ELECTRON_EXECUTABLE must be an absolute path.');
+if (packagedElectron && !fs.existsSync(packagedElectron))
+  throw new Error(
+    `Packaged Electron executable was not found: ${packagedElectron}`,
+  );
 const dataRoot = await mkdtemp(
   path.join(os.tmpdir(), 'restaurant-pos-electron-'),
 );
@@ -22,6 +30,7 @@ delete environment.ELECTRON_RUN_AS_NODE;
 Object.assign(environment, {
   XDG_CONFIG_HOME: path.join(dataRoot, 'config'),
   POS_ELECTRON_PORT: String(port),
+  POS_ELECTRON_USER_DATA_DIR: path.join(dataRoot, 'user-data'),
 });
 
 let desktop;
@@ -109,13 +118,21 @@ async function waitForStoppedHealth() {
 }
 
 async function launch() {
+  const args = packagedElectron
+    ? process.env.POS_ELECTRON_ACCEPTANCE_HEADLESS === '1'
+      ? ['--headless=new', '--disable-gpu']
+      : []
+    : process.platform === 'linux'
+      ? ['--no-sandbox', '.']
+      : ['.'];
   desktop = await electron.launch({
     // GitHub-hosted Linux runners do not provide Chromium's setuid sandbox.
     // This is limited to the isolated CI acceptance process; packaged apps
     // retain Electron's normal sandbox configuration for real users.
-    args: process.platform === 'linux' ? ['--no-sandbox', '.'] : ['.'],
+    args,
     cwd: desktopDirectory,
     env: environment,
+    ...(packagedElectron ? { executablePath: packagedElectron } : {}),
   });
   page = await desktop.firstWindow();
   page.on('console', (message) => {

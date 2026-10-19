@@ -10,6 +10,12 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const runtimeDirectory = currentDirectory;
 const backendPort = Number(process.env.POS_ELECTRON_PORT ?? 0);
+const configuredUserDataDirectory = process.env.POS_ELECTRON_USER_DATA_DIR;
+if (configuredUserDataDirectory) {
+  if (!path.isAbsolute(configuredUserDataDirectory))
+    throw new Error('POS_ELECTRON_USER_DATA_DIR must be an absolute path.');
+  app.setPath('userData', path.normalize(configuredUserDataDirectory));
+}
 let backend: ChildProcess | undefined;
 let bridge: net.Server | undefined;
 let bridgeSocket = '';
@@ -46,6 +52,24 @@ function paths() {
       'supervisor-cli.js',
     ),
   };
+}
+
+function desktopLog(event: string, message: string) {
+  try {
+    const { logs } = paths();
+    fs.mkdirSync(logs, { recursive: true, mode: 0o700 });
+    fs.appendFileSync(
+      path.join(logs, 'desktop.log'),
+      `${JSON.stringify({
+        at: new Date().toISOString(),
+        event: event.slice(0, 80),
+        message: message.replace(/[\r\n\t]/g, ' ').slice(0, 500),
+      })}\n`,
+      { mode: 0o600 },
+    );
+  } catch {
+    // Diagnostics must never prevent local sales operations.
+  }
 }
 
 function allocatePort() {
@@ -149,6 +173,7 @@ async function startBackend(port: number) {
       POS_DATA_DIR: runtime.data,
       POS_CLIENT_DIR: runtime.client,
       POS_MIGRATIONS_DIR: runtime.migrations,
+      POS_LOG_DIR: runtime.logs,
       POS_ELECTRON_BRIDGE_SOCKET: bridgeSocket,
       POS_ELECTRON_BRIDGE_SECRET: bridgeSecret,
     },
@@ -159,7 +184,15 @@ async function startBackend(port: number) {
     fs.appendFileSync(path.join(runtime.logs, name), chunk);
   backend.stdout?.on('data', writeLog('backend.stdout.log'));
   backend.stderr?.on('data', writeLog('backend.stderr.log'));
-  backend.once('exit', () => {
+  desktopLog(
+    'supervisor_started',
+    `pid=${backend.pid ?? 'unknown'} port=${port}`,
+  );
+  backend.once('exit', (code, signal) => {
+    desktopLog(
+      'supervisor_exited',
+      `code=${code ?? 'null'} signal=${signal ?? 'none'}`,
+    );
     backend = undefined;
   });
 }
@@ -172,11 +205,16 @@ async function waitForHealth(port: number) {
         `http://127.0.0.1:${port}/api/health`,
         (response) => {
           response.resume();
-          if (response.statusCode === 200) resolve();
-          else retry();
+          if (response.statusCode === 200) {
+            desktopLog('health_ok', `port=${port}`);
+            resolve();
+          } else retry();
         },
       );
-      request.once('error', retry);
+      request.once('error', (error) => {
+        desktopLog('health_error', error.message);
+        retry();
+      });
     };
     const retry = () => {
       if (Date.now() >= deadline)
@@ -235,6 +273,25 @@ function createWindow(origin: string) {
   mainWindow.maximize();
   if (!windowState.maximized) mainWindow.unmaximize();
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.session.webRequest.onCompleted((details) => {
+    const url = new URL(details.url);
+    if (url.origin === origin && url.pathname.startsWith('/api/'))
+      desktopLog(
+        'api_response',
+        `${url.pathname} status=${details.statusCode}`,
+      );
+  });
+  mainWindow.webContents.session.webRequest.onErrorOccurred((details) => {
+    const url = new URL(details.url);
+    if (url.origin === origin && url.pathname.startsWith('/api/'))
+      desktopLog('api_network_error', `${url.pathname} error=${details.error}`);
+  });
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, code, description, url) => {
+      desktopLog('renderer_load_failed', `code=${code} ${description} ${url}`);
+    },
+  );
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) event.preventDefault();
   });
@@ -273,6 +330,20 @@ function saveWindowState(window: BrowserWindow | undefined) {
 }
 
 function setupIpc() {
+  ipcMain.on('diagnostics:api', (_event, input: unknown) => {
+    if (!input || typeof input !== 'object') return;
+    const value = input as { path?: unknown; kind?: unknown; status?: unknown };
+    if (
+      typeof value.path !== 'string' ||
+      !value.path.startsWith('/api/') ||
+      !['request', 'response', 'network-error'].includes(String(value.kind))
+    )
+      return;
+    const status = Number.isInteger(value.status)
+      ? ` status=${value.status}`
+      : '';
+    desktopLog(`renderer_api_${value.kind}`, `${value.path}${status}`);
+  });
   ipcMain.handle('receipt:print', async () => {
     if (!mainWindow) return { ok: false, error: 'نافذة التطبيق غير متاحة.' };
     return new Promise((resolve) =>
@@ -329,11 +400,13 @@ function errorWindow(error: unknown) {
 
 async function launch() {
   try {
+    desktopLog('desktop_starting', `version=${app.getVersion()}`);
     const port = await allocatePort();
     await startDesktopBridge();
     await startBackend(port);
     await waitForHealth(port);
     activePort = port;
+    desktopLog('renderer_origin', `http://127.0.0.1:${port}`);
     createWindow(`http://127.0.0.1:${port}`);
   } catch (error) {
     errorWindow(error);

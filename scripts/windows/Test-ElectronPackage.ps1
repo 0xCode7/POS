@@ -116,6 +116,25 @@ const argon2 = require(path.join(application, 'node_modules', 'argon2'));
     if ($null -eq $previousElectronRunAsNode) { Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue }
     else { $env:ELECTRON_RUN_AS_NODE = $previousElectronRunAsNode }
   }
+
+  # This runs the actual packaged Electron executable with isolated application
+  # data. It proves renderer-to-Express requests, cookies, CSRF, checkout,
+  # reporting, backup, restore, and restart -- not merely native module loading.
+  $previousPackagedExecutable = $env:POS_PACKAGED_ELECTRON_EXECUTABLE
+  $previousAcceptanceHeadless = $env:POS_ELECTRON_ACCEPTANCE_HEADLESS
+  try {
+    $env:POS_PACKAGED_ELECTRON_EXECUTABLE = $runtime
+    $env:POS_ELECTRON_ACCEPTANCE_HEADLESS = '1'
+    node (Join-Path $root 'scripts\electron-linux-acceptance.mjs')
+    if ($LASTEXITCODE -ne 0) {
+      throw "Packaged Electron production API acceptance failed with exit code $LASTEXITCODE."
+    }
+  } finally {
+    if ($null -eq $previousPackagedExecutable) { Remove-Item Env:POS_PACKAGED_ELECTRON_EXECUTABLE -ErrorAction SilentlyContinue }
+    else { $env:POS_PACKAGED_ELECTRON_EXECUTABLE = $previousPackagedExecutable }
+    if ($null -eq $previousAcceptanceHeadless) { Remove-Item Env:POS_ELECTRON_ACCEPTANCE_HEADLESS -ErrorAction SilentlyContinue }
+    else { $env:POS_ELECTRON_ACCEPTANCE_HEADLESS = $previousAcceptanceHeadless }
+  }
 } finally {
   Remove-Item -LiteralPath $portableCheck -Force -Recurse -ErrorAction SilentlyContinue
 }

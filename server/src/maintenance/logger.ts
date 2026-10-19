@@ -5,10 +5,14 @@ import { ensurePrivateDirectory } from './paths.js';
 export class LocalLogger {
   private readonly filename: string;
 
-  constructor(databaseFilename: string) {
-    const directory = path.join(path.dirname(databaseFilename), 'logs');
-    ensurePrivateDirectory(directory);
-    this.filename = path.join(directory, 'application.log');
+  constructor(databaseFilename: string, directory?: string) {
+    const target =
+      directory ?? path.join(path.dirname(databaseFilename), 'logs');
+    if (!path.isAbsolute(target))
+      throw new Error('POS_LOG_DIR must be an absolute path.');
+    const resolved = path.normalize(target);
+    ensurePrivateDirectory(resolved);
+    this.filename = path.join(resolved, 'application.log');
   }
 
   info(event: string, message: string) {
