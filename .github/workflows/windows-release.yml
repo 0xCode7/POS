@@ -88,17 +88,23 @@ jobs:
             Write-Host "$name $actual"
           }
 
-      - name: Verify installed release with disposable data
-        shell: powershell
-        run: .\scripts\windows\Test-Installer.ps1
-
-      - name: Publish artifacts and checksums
+      # These files have been built and checksum-verified, but remain experimental.
+      # The mandatory installer acceptance test below currently exposes an unresolved
+      # Windows Supervisor shutdown issue. Upload first so manual Windows testing is
+      # possible without turning an acceptance-test failure into a successful run.
+      - name: Publish checksum-verified experimental artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: RestaurantPOS-Windows-x64
+          name: RestaurantPOS-Windows-x64-Experimental
           path: |
             release/windows/RestaurantPOS-Portable.zip
             release/windows/RestaurantPOS-Setup.exe
             release/windows/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Verify installed release with disposable data
+        shell: powershell
+        run: |
+          Write-Warning 'Experimental build only: the Windows Supervisor shutdown issue remains unresolved. This mandatory test must pass before any production release.'
+          .\scripts\windows\Test-Installer.ps1
