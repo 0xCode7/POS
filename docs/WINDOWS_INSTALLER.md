@@ -86,7 +86,9 @@ Run `RestaurantPOS-Setup.exe`. It installs for the current Windows user, does no
 %LOCALAPPDATA%\\Programs\\Restaurant POS
 ```
 
-The installer creates Start Menu and desktop shortcuts. They run `Launch-RestaurantPOS.vbs`, so there is no terminal/PowerShell window during normal startup. It starts the trusted Supervisor, waits for local health, then opens the default browser. If startup fails, a local Arabic dialog is shown; detailed logs are in `%LOCALAPPDATA%\\RestaurantPOS\\data\\logs`.
+The installer creates Start Menu and desktop shortcuts. They run the system `wscript.exe` host with `Launch-RestaurantPOS.vbs` as its quoted argument; a `.vbs` script is never executed directly as a Win32 program. This prevents Windows `CreateProcess` error 193 and leaves no terminal/PowerShell window during normal startup. It starts the trusted Supervisor, waits for local health, then opens the default browser. If startup fails, a local Arabic dialog is shown; detailed logs are in `%LOCALAPPDATA%\\RestaurantPOS\\data\\logs`.
+
+The downloadable Windows artifacts are currently **Experimental**. The installer acceptance workflow intentionally remains failing while the separate Windows Supervisor shutdown/temporary-file-lock issue is unresolved; this is not hidden or treated as production approval.
 
 The first launch has no built-in user or password. Create the first admin through the setup screen. The backend stays bound to `127.0.0.1`; no external server, cloud service, or runtime internet connection is required.
 

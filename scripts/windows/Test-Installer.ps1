@@ -11,6 +11,20 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Fail([string]$Message) { throw "Installer test: $Message" }
+function Assert-InstallerLaunchDefinition() {
+  $definition = Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\\..')).Path 'scripts\\windows\\RestaurantPOS.iss'
+  if (-not (Test-Path -LiteralPath $definition)) { Fail "installer definition is missing: $definition" }
+  $content = Get-Content -LiteralPath $definition -Raw
+  if ($content -match '(?im)^Filename:\s*"\{app\}\\[^"\r\n]+\.vbs"') {
+    Fail 'installer definition executes a .vbs file directly instead of wscript.exe.'
+  }
+  foreach ($section in @('[Icons]', '[Run]')) {
+    if ($content.IndexOf($section, [StringComparison]::Ordinal) -lt 0) { Fail "installer definition is missing $section." }
+  }
+  if ($content -notmatch '(?im)^.*Filename:\s*"\{sys\}\\wscript\.exe";\s*Parameters:\s*"//B') {
+    Fail 'installer definition does not invoke Launch-RestaurantPOS.vbs through wscript.exe.'
+  }
+}
 function Remove-TestRoot([string]$Path) {
   $lastError = $null
   foreach ($attempt in 1..15) {
@@ -44,6 +58,7 @@ function Wait-Health([int]$ProbePort) {
 }
 
 if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitOperatingSystem) { Fail 'run from Windows x64.' }
+Assert-InstallerLaunchDefinition
 $setup = [IO.Path]::GetFullPath($SetupPath)
 if (-not (Test-Path -LiteralPath $setup)) { Fail "Setup.exe does not exist: $setup" }
 if (-not $TestRoot) { $TestRoot = Join-Path $env:TEMP ("restaurant-pos-installer-test-" + [Guid]::NewGuid().ToString('N')) }
@@ -74,14 +89,31 @@ try {
   # installation directory in a hosted CI session. The launcher itself is tested
   # below with an explicit, disposable data directory.
   $env:LOCALAPPDATA = $profile
-  $shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Restaurant POS.lnk'
-  if (-not (Test-Path -LiteralPath $shortcut)) { Fail 'desktop shortcut was not created.' }
-  $shell = New-Object -ComObject WScript.Shell
-  $shortcutTarget = $shell.CreateShortcut($shortcut).TargetPath
-  if ([IO.Path]::GetFullPath($shortcutTarget) -ne [IO.Path]::GetFullPath((Join-Path $install 'Launch-RestaurantPOS.vbs'))) {
-    Fail 'desktop shortcut does not target this disposable installation.'
+  $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Restaurant POS.lnk'
+  $menuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Restaurant POS.lnk'
+  foreach ($shortcut in @($desktopShortcut, $menuShortcut)) {
+    if (-not (Test-Path -LiteralPath $shortcut)) { Fail "shortcut was not created: $shortcut" }
   }
-  & (Join-Path $install 'Start-RestaurantPOS.ps1') -DataDirectory $data -Port 3000 -NoBrowser
+  $shell = New-Object -ComObject WScript.Shell
+  $scriptHost = Join-Path ([Environment]::SystemDirectory) 'wscript.exe'
+  $launcher = Join-Path $install 'Launch-RestaurantPOS.vbs'
+  foreach ($shortcut in @($desktopShortcut, $menuShortcut)) {
+    $details = $shell.CreateShortcut($shortcut)
+    if ([IO.Path]::GetFullPath($details.TargetPath) -ne [IO.Path]::GetFullPath($scriptHost)) {
+      Fail "shortcut does not target wscript.exe: $shortcut"
+    }
+    if ($details.Arguments -notmatch [regex]::Escape($launcher)) {
+      Fail "shortcut does not pass this installation's VBS launcher: $shortcut"
+    }
+    if ([IO.Path]::GetFullPath($details.WorkingDirectory) -ne [IO.Path]::GetFullPath($install)) {
+      Fail "shortcut has the wrong working directory: $shortcut"
+    }
+  }
+
+  # Exercise the installed VBS through wscript.exe, as the post-install action and
+  # shortcuts do. This catches direct .vbs CreateProcess regressions without opening
+  # a persistent PowerShell console in CI.
+  Start-Process -FilePath $scriptHost -ArgumentList "//B `"$launcher`" -DataDirectory `"$data`" -Port 3000 -NoBrowser" -WorkingDirectory $install
   $launcherMayBeRunning = $true
   Wait-Health 3000
   & (Join-Path $install 'Stop-RestaurantPOS.ps1') -DataDirectory $data

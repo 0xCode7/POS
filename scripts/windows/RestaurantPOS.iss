@@ -42,11 +42,13 @@ Name: "desktopicon"; Description: "إنشاء اختصار على سطح الم�
 Source: "{#ReleaseDirectory}\RestaurantPOS-portable\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Restaurant POS"; Filename: "{app}\Launch-RestaurantPOS.vbs"; WorkingDir: "{app}"
-Name: "{autodesktop}\Restaurant POS"; Filename: "{app}\Launch-RestaurantPOS.vbs"; WorkingDir: "{app}"; Tasks: desktopicon
+; A .vbs script is not a Win32 executable. Always invoke it through the native
+; Windows Script Host so shortcuts do not call CreateProcess on the script itself.
+Name: "{autoprograms}\Restaurant POS"; Filename: "{sys}\wscript.exe"; Parameters: "//B ""{app}\Launch-RestaurantPOS.vbs"""; WorkingDir: "{app}"
+Name: "{autodesktop}\Restaurant POS"; Filename: "{sys}\wscript.exe"; Parameters: "//B ""{app}\Launch-RestaurantPOS.vbs"""; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Launch-RestaurantPOS.vbs"; Description: "تشغيل Restaurant POS الآن"; Flags: nowait postinstall skipifsilent
+Filename: "{sys}\wscript.exe"; Parameters: "//B ""{app}\Launch-RestaurantPOS.vbs"""; WorkingDir: "{app}"; Description: "تشغيل Restaurant POS الآن"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
