@@ -29,7 +29,6 @@
     "productName": "مطعم أفندينا",
     "executableName": "RestaurantPOS",
     "asar": false,
-    "artifactName": "RestaurantPOS-${os}-${arch}-${target}.${ext}",
     "afterPack": "scripts/after-pack.cjs",
     "directories": {
       "output": "../release/electron",
@@ -58,11 +57,15 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "artifactName": "RestaurantPOS-win-${arch}-nsis.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "مطعم أفندينا"
+    },
+    "portable": {
+      "artifactName": "RestaurantPOS-win-${arch}-portable.${ext}"
     }
   }
 }
