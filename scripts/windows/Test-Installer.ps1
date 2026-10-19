@@ -23,6 +23,12 @@ function Remove-TestRoot([string]$Path) {
       Start-Sleep -Seconds 2
     }
   }
+  $escaped = [regex]::Escape($Path)
+  $holders = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match $escaped } |
+    Select-Object ProcessId, Name, CommandLine |
+    Format-List | Out-String
+  if ($holders) { Write-Host "Processes referencing disposable installer root:$holders" }
   throw "Installer test cleanup could not release $Path after 30 seconds. $($lastError.Exception.Message)"
 }
 function Wait-Health([int]$ProbePort) {
