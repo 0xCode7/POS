@@ -54,7 +54,11 @@ function Get-InstalledShortcuts {
       Path = $shortcut
     })
   }
-  return @($matches)
+  # Emit each entry to the PowerShell pipeline. Wrapping the List itself in an
+  # array would make callers see one List object instead of its shortcuts.
+  foreach ($match in $matches) {
+    $match
+  }
 }
 
 function Write-ShortcutDiagnostics {
@@ -181,6 +185,7 @@ try {
     throw "The installed Electron executable is missing: $runtime"
   }
   $shortcuts = @(Get-InstalledShortcuts)
+  Write-Host "Installed Restaurant POS shortcuts found: $($shortcuts.Count)"
   $desktopShortcut = @($shortcuts | Where-Object { $_.Kind -eq 'desktop' }) | Select-Object -First 1
   $startMenuShortcut = @($shortcuts | Where-Object { $_.Kind -eq 'start-menu' }) | Select-Object -First 1
   if (($null -eq $desktopShortcut) -or ($null -eq $startMenuShortcut)) {
