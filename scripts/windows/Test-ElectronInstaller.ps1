@@ -13,8 +13,16 @@ if (-not (Test-Path -LiteralPath $setup)) {
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("restaurant-pos-installer-" + [guid]::NewGuid())
 $installDirectory = Join-Path $testRoot 'installed-app'
 $dataRoot = Join-Path $testRoot 'acceptance-data'
-$desktopDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
-$programsDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+$shortcutLocations = @(
+  @{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
+  @{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory) }
+  @{ Kind = 'desktop'; Directory = (Join-Path $env:USERPROFILE 'Desktop') }
+  @{ Kind = 'desktop'; Directory = (Join-Path $env:PUBLIC 'Desktop') }
+  @{ Kind = 'start-menu'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs) }
+  @{ Kind = 'start-menu'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms) }
+  @{ Kind = 'start-menu'; Directory = (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs') }
+  @{ Kind = 'start-menu'; Directory = (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu\\Programs') }
+) | Where-Object { $_.Directory } | Sort-Object Directory -Unique
 
 function Invoke-Setup {
   $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$installDirectory") -Wait -PassThru
@@ -34,16 +42,40 @@ function Get-ShortcutTarget([string] $shortcutPath) {
 
 function Get-InstalledShortcuts([string] $runtime) {
   $canonicalRuntime = [System.IO.Path]::GetFullPath($runtime)
-  return @($desktopDirectory, $programsDirectory) |
-    Where-Object { Test-Path -LiteralPath $_ } |
-    ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter '*.lnk' -File -Recurse -ErrorAction SilentlyContinue } |
-    Where-Object {
+  $matches = @()
+  foreach ($location in $shortcutLocations) {
+    if (-not (Test-Path -LiteralPath $location.Directory)) { continue }
+    foreach ($shortcut in Get-ChildItem -LiteralPath $location.Directory -Filter '*.lnk' -File -Recurse -ErrorAction SilentlyContinue) {
       try {
-        [System.IO.Path]::GetFullPath((Get-ShortcutTarget $_.FullName)) -ieq $canonicalRuntime
+        $target = Get-ShortcutTarget $shortcut.FullName
+        if ([System.IO.Path]::GetFullPath($target) -ieq $canonicalRuntime) {
+          $matches += [pscustomobject]@{
+            Kind = $location.Kind
+            Path = $shortcut.FullName
+            Target = $target
+          }
+        }
       } catch {
-        $false
+        # An unrelated malformed shortcut must not affect the disposable test.
       }
     }
+  }
+  return $matches
+}
+
+function Write-ShortcutDiagnostics {
+  Write-Host 'Shortcut locations inspected:'
+  foreach ($location in $shortcutLocations) {
+    Write-Host "  [$($location.Kind)] $($location.Directory)"
+    if (Test-Path -LiteralPath $location.Directory) {
+      Get-ChildItem -LiteralPath $location.Directory -Filter '*.lnk' -File -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object {
+          $target = ''
+          try { $target = Get-ShortcutTarget $_.FullName } catch { $target = '<unreadable>' }
+          Write-Host "    $($_.FullName) -> $target"
+        }
+    }
+  }
 }
 
 function Invoke-Acceptance([bool] $verifyExisting) {
@@ -92,8 +124,11 @@ try {
     throw "The installed Electron executable is missing: $runtime"
   }
   $shortcuts = @(Get-InstalledShortcuts $runtime)
-  if ($shortcuts.Count -lt 2) {
-    throw "Expected desktop and Start Menu shortcuts targeting the installed executable; found $($shortcuts.Count)."
+  $desktopShortcut = $shortcuts | Where-Object Kind -eq 'desktop' | Select-Object -First 1
+  $startMenuShortcut = $shortcuts | Where-Object Kind -eq 'start-menu' | Select-Object -First 1
+  if (-not $desktopShortcut -or -not $startMenuShortcut) {
+    Write-ShortcutDiagnostics
+    throw "Expected a desktop and a Start Menu shortcut targeting the installed executable; found desktop=$([bool]$desktopShortcut), start-menu=$([bool]$startMenuShortcut)."
   }
 
   Invoke-Acceptance $false
@@ -119,7 +154,7 @@ try {
   # an arbitrary user installation or data directory.
   if (Test-Path -LiteralPath $installDirectory) {
     Get-InstalledShortcuts (Join-Path $installDirectory 'RestaurantPOS.exe') |
-      Remove-Item -Force -ErrorAction SilentlyContinue
+      ForEach-Object { Remove-Item -LiteralPath $_.Path -Force -ErrorAction SilentlyContinue }
   }
   Remove-Item -LiteralPath $testRoot -Force -Recurse -ErrorAction SilentlyContinue
 }
