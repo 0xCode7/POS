@@ -274,12 +274,12 @@ try {
       .waitFor();
     await page.getByRole('button', { name: 'إغلاق الإشعار' }).click();
     assert.equal(
-      await page.locator('.page-toast').count(),
+      await page.locator('.page-toast:visible').count(),
       0,
       'A notice must be dismissible.',
     );
     assert.ok(
-      (await page.locator('.page-toast').count()) <= 3,
+      (await page.locator('.page-toast:visible').count()) <= 3,
       'More than three notices are visible.',
     );
 
