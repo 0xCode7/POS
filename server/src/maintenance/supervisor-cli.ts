@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -194,16 +194,41 @@ function startBackend() {
 async function stopBackend() {
   if (!child) return;
   const stopping = child;
-  await new Promise<void>((resolve, reject) => {
+  try {
+    await waitForBackendExit(stopping, 20_000);
+    return;
+  } catch (error) {
+    if (process.platform !== 'win32' || !stopping.pid) throw error;
+    // This PID is the direct child created by this Supervisor. /t is deliberately
+    // limited to that child's descendants; it cannot target an unrelated process.
+    console.error(
+      'Graceful backend shutdown timed out; ending managed process tree.',
+    );
+    const result = spawnSync('taskkill.exe', [
+      '/pid',
+      String(stopping.pid),
+      '/t',
+      '/f',
+    ]);
+    if (result.status !== 0 && result.status !== 128) {
+      throw new Error('تعذر إنهاء عملية الخدمة المُدارة في Windows.');
+    }
+    await waitForBackendExit(stopping, 10_000);
+  }
+}
+
+function waitForBackendExit(stopping: ChildProcess, timeout: number) {
+  if (stopping.exitCode !== null) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error('تعذر إيقاف الخدمة في الوقت المحدد.')),
-      30_000,
+      timeout,
     );
     stopping.once('exit', () => {
       clearTimeout(timer);
       resolve();
     });
-    if (!stopping.kill('SIGTERM')) {
+    if (!stopping.killed && !stopping.kill('SIGTERM')) {
       clearTimeout(timer);
       reject(new Error('تعذر إرسال طلب الإيقاف إلى الخدمة.'));
     }
