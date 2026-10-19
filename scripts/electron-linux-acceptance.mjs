@@ -164,7 +164,7 @@ async function assertPersistedSale() {
   await signInIfNeeded();
   await page.getByRole('heading', { name: 'نقطة البيع' }).waitFor();
   await page.getByRole('button', { name: 'المنيو' }).click();
-  await page.getByText('شاي إلكترون', { exact: true }).last().waitFor();
+  await page.locator('.menu-card').filter({ hasText: 'شاي إلكترون' }).waitFor();
   await page.getByRole('button', { name: 'التقارير' }).click();
   await page.getByRole('heading', { name: 'تقارير المبيعات' }).waitFor();
   assert.equal(
