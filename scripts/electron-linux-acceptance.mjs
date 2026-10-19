@@ -263,9 +263,13 @@ try {
   await page.getByRole('heading', { name: 'تسجيل الدخول' }).waitFor();
   await close();
 
+  // A successful restore invalidates every session while its initiating request
+  // is still in flight, so either the restore request or the boot-time auth
+  // probe can legitimately observe the required 401.
   const expectedSessionExpiry = consoleErrors.filter(
     (entry) =>
-      entry.includes('/api/auth/me') && entry.includes('401 (Unauthorized)'),
+      entry.includes('401 (Unauthorized)') &&
+      (entry.includes('/api/auth/me') || entry.includes('/restore-request')),
   );
   const unexpectedConsoleErrors = consoleErrors.filter(
     (entry) => !expectedSessionExpiry.includes(entry),
