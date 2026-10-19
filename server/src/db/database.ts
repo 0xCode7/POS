@@ -48,8 +48,12 @@ export function openDatabase(
 
   const db = drizzle(sqlite, { schema });
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const configuredMigrations =
+    options.migrationsFolder ?? process.env.POS_MIGRATIONS_DIR;
+  if (configuredMigrations && !path.isAbsolute(configuredMigrations))
+    throw new Error('POS_MIGRATIONS_DIR must be an absolute path.');
   const migrationsFolder =
-    options.migrationsFolder ?? path.resolve(moduleDirectory, '../../drizzle');
+    configuredMigrations ?? path.resolve(moduleDirectory, '../../drizzle');
   migrate(db, { migrationsFolder });
 
   return { db, sqlite, filename };

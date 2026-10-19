@@ -7,6 +7,7 @@ import {
   type Page,
   type Receipt,
 } from './api';
+import { openReceiptPrintDialog } from './desktop';
 import { configureReceiptPrintPage, ReceiptView } from './POSScreen';
 
 type AdminOrder = Order & {
@@ -108,7 +109,7 @@ export function OrdersScreen({
     if (!receipt) return;
     try {
       configureReceiptPrintPage();
-      window.print();
+      await openReceiptPrintDialog();
       await api(`/api/receipts/${receipt.id}/print-attempts`, {
         method: 'POST',
         body: JSON.stringify({ outcome: 'DIALOG_OPENED' }),

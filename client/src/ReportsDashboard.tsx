@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, type Page, type Receipt } from './api';
+import { openReceiptPrintDialog } from './desktop';
 import { configureReceiptPrintPage, ReceiptView } from './POSScreen';
 
 type Range = { start: string; end: string };
@@ -173,7 +174,7 @@ export function ReportsDashboard({
     if (!receipt) return;
     try {
       configureReceiptPrintPage();
-      window.print();
+      await openReceiptPrintDialog();
       await api(`/api/receipts/${receipt.id}/print-attempts`, {
         method: 'POST',
         body: JSON.stringify({ outcome: 'DIALOG_OPENED' }),

@@ -1,5 +1,16 @@
 # Roadmap
 
+## Electron migration (in progress)
+
+- Electron main/preload host with sandboxed renderer and loopback backend
+- Electron-owned startup readiness, native folder chooser bridge, and print dialog
+- Linux AppImage and Windows NSIS/portable packaging preparation
+- Linux Electron acceptance now covers isolated setup/login, POS payment,
+  receipt preview, reports, backup, Supervisor restore, session invalidation,
+  clean close, and reopen. Pending: interactive confirmation of the native
+  folder/print dialogs, Windows CI package execution, Windows installer/restore
+  acceptance, signing, and physical printer tests.
+
 ## Stage 1 — Project foundation (complete)
 
 - npm workspaces for React/Vite and Express/TypeScript

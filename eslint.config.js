@@ -18,9 +18,19 @@ export default tseslint.config(
     rules: reactHooks.configs.flat.recommended.rules,
   },
   {
-    files: ['server/**/*.ts', '*.config.{js,ts}', 'eslint.config.js'],
+    files: [
+      'server/**/*.ts',
+      'desktop/**/*.{ts,cjs,mjs}',
+      'scripts/**/*.{cjs,mjs}',
+      '*.config.{js,ts}',
+      'eslint.config.js',
+    ],
     languageOptions: {
       globals: globals.node,
+    },
+    rules: {
+      // Electron preload is intentionally CommonJS so Electron can load it before ESM.
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
 );

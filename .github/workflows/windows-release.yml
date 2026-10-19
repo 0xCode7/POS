@@ -39,32 +39,9 @@ jobs:
       - name: Run Chromium workflow
         run: npm run test:e2e
 
-      - name: Install Inno Setup
+      - name: Build Electron NSIS installer and portable ZIP
         shell: powershell
-        run: |
-          choco install innosetup --version=6.5.4 --allow-downgrade --force --yes --no-progress --limit-output
-          $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path -LiteralPath $compiler)) {
-            $compiler = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
-          }
-          if (-not (Test-Path -LiteralPath $compiler)) {
-            throw "Inno Setup compiler was not found: $compiler"
-          }
-          $installed = choco list --local-only innosetup --exact --limit-output
-          if ($installed -notmatch '^innosetup\|6\.5\.4$') {
-            throw "Expected Chocolatey package innosetup|6.5.4, found: $installed"
-          }
-          Write-Host "Verified Inno Setup 6.5.4 at $compiler"
-
-      - name: Build portable ZIP and Setup.exe
-        shell: powershell
-        run: |
-          $version = '${{ inputs.release_version }}'
-          if ($version) {
-            .\scripts\windows\Build-Release.ps1 -ReleaseVersion $version -Force
-          } else {
-            .\scripts\windows\Build-Release.ps1 -Force
-          }
+        run: .\scripts\windows\Build-ElectronRelease.ps1
 
       - name: Verify release files and SHA-256 checksums
         shell: powershell
@@ -88,10 +65,8 @@ jobs:
             Write-Host "$name $actual"
           }
 
-      # These files have been built and checksum-verified, but remain experimental.
-      # The mandatory installer acceptance test below currently exposes an unresolved
-      # Windows Supervisor shutdown issue. Upload first so manual Windows testing is
-      # possible without turning an acceptance-test failure into a successful run.
+      # These files are checksum-verified but remain experimental until Windows
+      # desktop, restore, and physical-printer acceptance has been completed.
       - name: Publish checksum-verified experimental artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -103,8 +78,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Verify installed release with disposable data
+      - name: Verify Electron package structure
         shell: powershell
         run: |
-          Write-Warning 'Experimental build only: the Windows Supervisor shutdown issue remains unresolved. This mandatory test must pass before any production release.'
-          .\scripts\windows\Test-Installer.ps1
+          .\scripts\windows\Test-ElectronPackage.ps1

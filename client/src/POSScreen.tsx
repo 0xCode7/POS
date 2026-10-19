@@ -9,6 +9,7 @@ import {
   type Receipt,
   type User,
 } from './api';
+import { openReceiptPrintDialog } from './desktop';
 import { useSiteDialog } from './SiteDialog';
 
 const egp = new Intl.NumberFormat('ar-EG', {
@@ -373,7 +374,7 @@ export function POSScreen({
   const printReceipt = useCallback(async (target: Receipt) => {
     try {
       configureReceiptPrintPage();
-      window.print();
+      await openReceiptPrintDialog();
       await api(`/api/receipts/${target.id}/print-attempts`, {
         method: 'POST',
         body: JSON.stringify({ outcome: 'DIALOG_OPENED' }),

@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { AuthService } from './auth/service.js';
 import fs from 'node:fs';
+import path from 'node:path';
 import { openDatabase, resolveDataDirectory } from './db/database.js';
 import { BackupService } from './maintenance/backup.js';
 import { acquireRuntimeLock } from './maintenance/runtime-lock.js';
@@ -33,15 +34,20 @@ const sessionCleanup = setInterval(
 );
 sessionCleanup.unref();
 
-const server = createApp({ database, backupService: backups, logger }).listen(
-  port,
-  LOOPBACK_HOST,
-  () => {
-    console.log(
-      `Restaurant POS is available at http://${LOOPBACK_HOST}:${port}`,
-    );
-  },
-);
+const configuredClientDirectory = process.env.POS_CLIENT_DIR;
+if (configuredClientDirectory && !path.isAbsolute(configuredClientDirectory))
+  throw new Error('POS_CLIENT_DIR must be an absolute path.');
+
+const server = createApp({
+  database,
+  backupService: backups,
+  logger,
+  ...(configuredClientDirectory
+    ? { clientDirectory: configuredClientDirectory }
+    : {}),
+}).listen(port, LOOPBACK_HOST, () => {
+  console.log(`Restaurant POS is available at http://${LOOPBACK_HOST}:${port}`);
+});
 
 server.on('error', (error) => {
   console.error('Restaurant POS server failed to start:', error);

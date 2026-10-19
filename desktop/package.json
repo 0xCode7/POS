@@ -1,0 +1,68 @@
+{
+  "name": "@restaurant-pos/desktop",
+  "version": "0.1.0",
+  "description": "Offline Restaurant POS desktop application",
+  "author": "Restaurant POS",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../scripts/prepare-electron-runtime.mjs && node ../scripts/generate-electron-icons.mjs",
+    "rebuild:native": "electron-builder install-app-deps",
+    "dev": "cross-env POS_ELECTRON_DEV=1 node scripts/launch.mjs",
+    "start": "node scripts/launch.mjs",
+    "package:linux": "npm run rebuild:native && electron-builder --linux AppImage --x64 --publish never",
+    "package:win": "npm run rebuild:native && electron-builder --win nsis portable --x64 --publish never",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+  },
+  "dependencies": {
+    "argon2": "0.45.1",
+    "better-sqlite3": "13.0.3",
+    "drizzle-orm": "0.45.4",
+    "express": "5.3.0",
+    "express-rate-limit": "8.7.1",
+    "luxon": "^3.7.2",
+    "zod": "4.6.7"
+  },
+  "build": {
+    "appId": "com.efendina.restaurantpos",
+    "productName": "مطعم أفندينا",
+    "executableName": "RestaurantPOS",
+    "asar": false,
+    "artifactName": "RestaurantPOS-${os}-${arch}-${target}.${ext}",
+    "afterPack": "scripts/after-pack.cjs",
+    "directories": {
+      "output": "../release/electron",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "package.json",
+      "!dist/**/*.map"
+    ],
+    "extraMetadata": {
+      "main": "dist/main.js"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "icon": "build/icons"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "مطعم أفندينا"
+    }
+  }
+}

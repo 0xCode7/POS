@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, type Page } from './api';
+import { waitForDesktopServiceRecovery } from './desktop';
 import { useSiteDialog } from './SiteDialog';
 
 type BackupRecord = {
@@ -228,6 +229,10 @@ export function BackupScreen({
       setNotice(
         'تم قبول طلب الاستعادة. ستتوقف الخدمة مؤقتًا ثم ستحتاج إلى تسجيل الدخول مجددًا.',
       );
+      if (await waitForDesktopServiceRecovery()) {
+        window.location.reload();
+        return;
+      }
       await load();
     } catch (cause) {
       fail(cause);

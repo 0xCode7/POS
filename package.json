@@ -10,7 +10,8 @@
   },
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "desktop"
   ],
   "scripts": {
     "dev": "concurrently --kill-others --names server,client --prefix-colors blue,green \"npm run dev --workspace server\" \"npm run dev --workspace client\"",
@@ -22,6 +23,12 @@
     "format:check": "prettier --check .",
     "test": "npm run test --workspace server",
     "test:e2e": "npm run build && playwright test",
+    "desktop:dev": "npm run build && npm run dev --workspace @restaurant-pos/desktop",
+    "desktop:build": "npm run build && npm run build --workspace @restaurant-pos/desktop",
+    "desktop:start": "npm run desktop:build && npm run start --workspace @restaurant-pos/desktop",
+    "test:electron:linux": "npm run desktop:build && node scripts/electron-linux-acceptance.mjs",
+    "desktop:linux": "npm run desktop:build && npm run package:linux --workspace @restaurant-pos/desktop",
+    "desktop:win": "npm run desktop:build && npm run package:win --workspace @restaurant-pos/desktop",
     "sample-data": "npm run sample-data --workspace server",
     "windows:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Build-Portable.ps1",
     "windows:test-portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Test-Portable.ps1",
@@ -34,10 +41,16 @@
     "@playwright/test": "^1.56.1",
     "concurrently": "10.0.6",
     "cross-env": "10.1.0",
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3",
     "eslint": "10.0.2",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
+    "png-to-ico": "3.0.2",
     "prettier": "3.9.0",
     "typescript-eslint": "8.57.1"
+  },
+  "allowScripts": {
+    "electron@44.9.0": true
   }
 }

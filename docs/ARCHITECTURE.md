@@ -1,5 +1,22 @@
 # Architecture
 
+## Electron desktop host (experimental)
+
+```text
+BrowserWindow renderer (React, sandboxed, no Node)
+  -> loopback HTTP + Express authentication/CSRF/RBAC
+Electron main -> trusted Supervisor -> Express backend -> SQLite
+```
+
+Electron selects a loopback port, creates a private per-launch desktop bridge,
+starts the Supervisor with `ELECTRON_RUN_AS_NODE=1`, and waits for health before
+navigating the window. `contextIsolation` and sandboxing remain enabled while
+Node integration is disabled. Preload exposes only print, restart, and
+open-logs calls. Folder chooser requests originate from the authenticated
+backend and are validated before persistence; the renderer has no generic path
+or filesystem IPC. The Supervisor remains alive for controlled restore while
+the backend is stopped.
+
 ## Runtime topology
 
 ```text

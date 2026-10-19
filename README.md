@@ -34,6 +34,39 @@ npm start
 
 Open `http://127.0.0.1:3000`. Express serves the compiled client and API. Vite, TypeScript, file watchers, and tests do not run in production. Dependency installation and builds need internet access; the resulting application makes no external runtime requests.
 
+## Electron desktop application (experimental)
+
+Electron hosts the existing local service boundary rather than moving SQLite or
+financial logic into React: Electron owns the window, starts a trusted
+Supervisor using Electron's bundled Node runtime, and the Supervisor owns the
+loopback-only Express process and SQLite connection. React receives no Node,
+database, shell, or generic filesystem capability. The window waits for
+`/api/health` before navigation, so it does not intentionally load a
+connection-refused page.
+
+```bash
+npm run desktop:build
+npm run desktop:dev
+npm run desktop:linux
+npm run test:electron:linux
+```
+
+Desktop data stays outside the installed app. In desktop mode, native folder
+selection and folder opening are requested by the authenticated backend over a
+private Electron bridge, then validated by the existing backup service; React
+cannot execute arbitrary filesystem commands. Restore remains
+Supervisor-managed while Express releases SQLite handles. Electron printing
+opens its normal print dialog only: silent printing and physical output remain
+unverified.
+
+`npm run test:electron:linux` uses a fresh temporary Electron user-data
+directory, creates an administrator and a paid order through the rendered UI,
+checks the receipt preview and report, creates an Arabic-named backup, restores
+it through the Supervisor, confirms session invalidation, and reopens the app.
+It deletes that temporary directory afterward. A human must still confirm the
+appearance and selection behavior of the native folder dialog and the system
+print dialog on the target desktop.
+
 The service creates one verified SQLite Online Backup per day while running. Admins manage status, location, validation history, optional manual backup names, and restore preflight from the dedicated **النسخ الاحتياطية** screen. If `POS_BACKUP_DIR` is set, it has highest priority and the UI cannot override it. Otherwise an administrator may save a validated absolute directory in `backup-settings.json` beside the database; existing copies are not moved. Linux desktop sessions with Zenity and Windows portable deployments can use a protected graphical folder chooser; headless/browser-only runs retain a validated manual-path fallback. A friendly manual name is stored next to its generated SQLite file as a matching `.metadata.json` sidecar—copy both files together to preserve it. Use another physical drive for protection against primary-disk loss. Same-disk backups only protect against some logical failures. When started through its trusted Supervisor, the reauthenticated admin restore action requests a controlled stop, verified replacement, restart, and session invalidation. Direct `npm start` intentionally leaves UI restore unavailable; use the maintenance CLI in that mode. Follow [Backup and recovery](docs/BACKUP_RECOVERY.md).
 
 ## Data location and migrations

@@ -1,5 +1,20 @@
 # Windows installer (Stage 9B)
 
+> **Electron migration notice:** the VBS/browser launcher material below is
+> legacy deployment documentation. The active experimental desktop path is the
+> `desktop/` Electron Builder configuration, which produces an NSIS installer
+> and portable Electron ZIP without opening an external browser. Interactive
+> Windows startup, restore, and printer testing remain required before any
+> production approval.
+
+The Electron build embeds its own compatible Node runtime. Its managed
+Supervisor starts Express directly; the Electron NSIS shortcuts start the
+packaged Electron executable, not `Launch-RestaurantPOS.vbs`, `wscript.exe`, or
+the legacy browser launcher. SQLite data stays in Electron's per-user data
+directory outside the installation directory. The legacy material below is
+retained only as historical context until the Electron Windows acceptance run
+replaces it.
+
 Stage 9B defines a real Inno Setup installer, but this Linux environment has not built or executed it. Do not distribute it until the Windows release workflow or an interactive Windows x64 build machine produces the actual files and records test evidence.
 
 ## Build release artifacts on Windows x64
