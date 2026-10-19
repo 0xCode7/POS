@@ -32,6 +32,13 @@ function Copy-Required([string]$Source, [string]$Destination) {
   Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
 }
 
+function Assert-Utf8Bom([string]$Path) {
+  $bytes = [IO.File]::ReadAllBytes($Path)
+  if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+    Fail "PowerShell script with Arabic text must use UTF-8 BOM for Windows PowerShell 5.1: $Path"
+  }
+}
+
 if ($env:OS -ne 'Windows_NT') { Fail 'this build must run on Windows x64 so native modules are produced for Windows.' }
 if ([Environment]::Is64BitOperatingSystem -ne $true) { Fail 'Windows x64 is required.' }
 
@@ -103,6 +110,14 @@ try {
   }
   Copy-Required (Join-Path $source 'client\dist') (Join-Path $app 'client\dist')
   Copy-Required (Join-Path $source 'server\dist') (Join-Path $app 'server\dist')
+
+  # Windows PowerShell 5.1 interprets UTF-8 scripts without a BOM as ANSI. These
+  # shipped scripts contain Arabic text, so require their source encoding explicitly.
+  foreach ($scriptWithArabicText in @(
+    (Join-Path $PSScriptRoot 'Start-RestaurantPOS.ps1'),
+    (Join-Path $PSScriptRoot 'Test-Portable.ps1'),
+    (Join-Path $source 'server\src\maintenance\windows-folder-picker.ps1')
+  )) { Assert-Utf8Bom $scriptWithArabicText }
 
   # npm runs in Windows against the bundled Node runtime. Native postinstall scripts
   # therefore fetch/build win32-x64 binaries rather than copying Linux .node files.

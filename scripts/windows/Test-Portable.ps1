@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [string]$PortableRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
   [string]$TestRoot,

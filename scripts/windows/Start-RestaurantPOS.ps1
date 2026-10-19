@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [string]$DataDirectory,
   [ValidateRange(1, 65535)]
