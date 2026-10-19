@@ -14,14 +14,14 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("restaurant-pos-install
 $installDirectory = Join-Path $testRoot 'installed-app'
 $dataRoot = Join-Path $testRoot 'acceptance-data'
 $shortcutLocations = @(
-  @{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
-  @{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory) }
-  @{ Kind = 'desktop'; Directory = (Join-Path $env:USERPROFILE 'Desktop') }
-  @{ Kind = 'desktop'; Directory = (Join-Path $env:PUBLIC 'Desktop') }
-  @{ Kind = 'start-menu'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs) }
-  @{ Kind = 'start-menu'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms) }
-  @{ Kind = 'start-menu'; Directory = (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs') }
-  @{ Kind = 'start-menu'; Directory = (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu\\Programs') }
+  [pscustomobject]@{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
+  [pscustomobject]@{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory) }
+  [pscustomobject]@{ Kind = 'desktop'; Directory = (Join-Path $env:USERPROFILE 'Desktop') }
+  [pscustomobject]@{ Kind = 'desktop'; Directory = (Join-Path $env:PUBLIC 'Desktop') }
+  [pscustomobject]@{ Kind = 'start-menu'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs) }
+  [pscustomobject]@{ Kind = 'start-menu'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms) }
+  [pscustomobject]@{ Kind = 'start-menu'; Directory = (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs') }
+  [pscustomobject]@{ Kind = 'start-menu'; Directory = (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu\\Programs') }
 ) | Where-Object { $_.Directory } | Sort-Object Directory -Unique
 
 function Invoke-Setup {
