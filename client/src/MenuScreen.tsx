@@ -9,6 +9,7 @@ import {
   type User,
 } from './api';
 import { useSiteDialog } from './SiteDialog';
+import { Notice } from './Notice';
 
 const egp = new Intl.NumberFormat('ar-EG', {
   style: 'currency',
@@ -310,11 +311,15 @@ export function MenuScreen({
         </div>
       </div>
       {error && (
-        <p className="form-error page-toast" role="alert">
-          {error}
-        </p>
+        <Notice message={error} tone="error" onDismiss={() => setError('')} />
       )}
-      {notice && <p className="success-message page-toast">{notice}</p>}
+      {notice && (
+        <Notice
+          message={notice}
+          tone="success"
+          onDismiss={() => setNotice('')}
+        />
+      )}
       {admin && creationForm && (
         <div className="admin-forms">
           {creationForm === 'category' && (

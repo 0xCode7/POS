@@ -51,29 +51,42 @@ npm run desktop:linux
 npm run test:electron:linux
 ```
 
-Desktop data stays outside the installed app. In desktop mode, native folder
-selection and folder opening are requested by the authenticated backend over a
-private Electron bridge, then validated by the existing backup service; React
-cannot execute arbitrary filesystem commands. Restore remains
-Supervisor-managed while Express releases SQLite handles. Electron printing
-opens its normal print dialog only: silent printing and physical output remain
-unverified.
+Desktop data stays outside the installed app. On Windows, a new installation
+uses `%LOCALAPPDATA%\\RestaurantPOS\\data`; Electron settings and logs use
+`%LOCALAPPDATA%\\RestaurantPOS\\desktop`. During an upgrade, exactly one
+database found in the earlier Electron location is retained in place. If more
+than one database is found, startup stops and names the locations rather than
+risk selecting, copying, or replacing customer data. The backup location is
+shown read-only in the UI; folder selection/opening controls are intentionally
+not available in this delivery. UI restore is also disabled until its complete
+supervisor lifecycle is revalidated; use the documented local recovery CLI.
+Electron printing opens its normal print dialog only: silent printing and
+physical output remain unverified.
 
 `npm run test:electron:linux` uses a fresh temporary Electron user-data
 directory, creates an administrator and a paid order through the rendered UI,
-checks the receipt preview and report, creates an Arabic-named backup, restores
-it through the Supervisor, confirms session invalidation, and reopens the app.
-It deletes that temporary directory afterward. A human must still confirm the
-appearance and selection behavior of the native folder dialog and the system
-print dialog on the target desktop.
+checks the receipt preview and report, creates an Arabic-named backup, then
+fully closes and reopens the app three times while checking that the same sale
+remains. It deletes that temporary directory afterward. A human must still
+confirm the system print dialog on the target desktop.
 
-The service creates one verified SQLite Online Backup per day while running. Admins manage status, location, validation history, optional manual backup names, and restore preflight from the dedicated **النسخ الاحتياطية** screen. If `POS_BACKUP_DIR` is set, it has highest priority and the UI cannot override it. Otherwise an administrator may save a validated absolute directory in `backup-settings.json` beside the database; existing copies are not moved. Linux desktop sessions with Zenity and Windows portable deployments can use a protected graphical folder chooser; headless/browser-only runs retain a validated manual-path fallback. A friendly manual name is stored next to its generated SQLite file as a matching `.metadata.json` sidecar—copy both files together to preserve it. Use another physical drive for protection against primary-disk loss. Same-disk backups only protect against some logical failures. When started through its trusted Supervisor, the reauthenticated admin restore action requests a controlled stop, verified replacement, restart, and session invalidation. Direct `npm start` intentionally leaves UI restore unavailable; use the maintenance CLI in that mode. Follow [Backup and recovery](docs/BACKUP_RECOVERY.md).
+The service creates one verified SQLite Online Backup per day while running.
+Admins can view status and validation history and create optional Arabic-named
+manual backups from **النسخ الاحتياطية**. The active backup location is shown
+read-only; this emergency Windows delivery intentionally hides folder picking,
+manual path entry, and folder opening. A friendly manual name is stored next to
+its generated SQLite file as a matching `.metadata.json` sidecar—copy both
+files together to preserve it. Use another physical drive for protection
+against primary-disk loss. Same-disk backups only protect against some logical
+failures. Interactive restore is disabled pending another full supervisor
+lifecycle validation; preserve the documented offline maintenance CLI. Follow
+[Backup and recovery](docs/BACKUP_RECOVERY.md).
 
 ## Data location and migrations
 
 The default SQLite file is outside the installation tree:
 
-- Windows: `%LOCALAPPDATA%\RestaurantPOS\data\restaurant-pos.sqlite` (falling back to `%APPDATA%`)
+- Windows: `%LOCALAPPDATA%\RestaurantPOS\data\restaurant-pos.sqlite`
 - Linux: `$XDG_DATA_HOME/restaurant-pos/restaurant-pos.sqlite`, or `~/.local/share/restaurant-pos/restaurant-pos.sqlite`
 
 Set `POS_DATA_DIR` to an **absolute writable directory** to override this. The database, `-wal`/`-shm` files, and backups are ignored by Git. Back up the database only with SQLite-aware tooling or while the service is stopped cleanly; copying only the main file while WAL is active can lose committed data.

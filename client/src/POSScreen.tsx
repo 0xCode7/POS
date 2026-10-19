@@ -10,6 +10,7 @@ import {
   type User,
 } from './api';
 import { openReceiptPrintDialog } from './desktop';
+import { Notice } from './Notice';
 import { useSiteDialog } from './SiteDialog';
 
 const egp = new Intl.NumberFormat('ar-EG', {
@@ -432,8 +433,16 @@ export function POSScreen({
           </button>
         )}
       </div>
-      {error && <p className="form-error page-toast">{error}</p>}
-      {notice && <p className="success-message page-toast">{notice}</p>}
+      {error && (
+        <Notice message={error} tone="error" onDismiss={() => setError('')} />
+      )}
+      {notice && (
+        <Notice
+          message={notice}
+          tone="success"
+          onDismiss={() => setNotice('')}
+        />
+      )}
       <div className="pos-layout">
         <div className="catalog">
           <div className="category-strip">

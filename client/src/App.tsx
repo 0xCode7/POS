@@ -7,6 +7,7 @@ import { useSiteDialog } from './SiteDialog';
 import { Icon } from './Icon';
 import { OrdersScreen } from './OrdersScreen';
 import { BackupScreen } from './BackupScreen';
+import { Notice } from './Notice';
 type Screen = 'loading' | 'setup' | 'login' | 'app' | 'offline';
 
 function credentials(form: HTMLFormElement) {
@@ -388,11 +389,15 @@ function UsersPanel({
         <span>{users.length} مستخدم</span>
       </div>
       {error && (
-        <p className="form-error page-toast" role="alert">
-          {error}
-        </p>
+        <Notice message={error} tone="error" onDismiss={() => setError('')} />
       )}
-      {notice && <p className="success-message page-toast">{notice}</p>}
+      {notice && (
+        <Notice
+          message={notice}
+          tone="success"
+          onDismiss={() => setNotice('')}
+        />
+      )}
       <form className="create-user" onSubmit={(event) => void create(event)}>
         <label>
           اسم المستخدم

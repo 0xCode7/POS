@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -20,9 +19,25 @@ if (packagedElectron && !fs.existsSync(packagedElectron))
   throw new Error(
     `Packaged Electron executable was not found: ${packagedElectron}`,
   );
-const dataRoot = await mkdtemp(
-  path.join(os.tmpdir(), 'restaurant-pos-electron-'),
+const configuredDataRoot = process.env.POS_ELECTRON_ACCEPTANCE_DATA_ROOT;
+if (configuredDataRoot && !path.isAbsolute(configuredDataRoot))
+  throw new Error(
+    'POS_ELECTRON_ACCEPTANCE_DATA_ROOT must be an absolute path.',
+  );
+const dataRoot = configuredDataRoot
+  ? path.normalize(configuredDataRoot)
+  : await mkdtemp(path.join(os.tmpdir(), 'restaurant-pos-electron-'));
+fs.mkdirSync(dataRoot, { recursive: true, mode: 0o700 });
+const keepData = process.env.POS_ELECTRON_ACCEPTANCE_KEEP_DATA === '1';
+const verifyExistingOnly =
+  process.env.POS_ELECTRON_ACCEPTANCE_VERIFY_EXISTING === '1';
+const windowsPackagedRun = Boolean(
+  packagedElectron && process.platform === 'win32',
 );
+const localAppData = path.join(dataRoot, 'local-app-data');
+const userDataDirectory = windowsPackagedRun
+  ? path.join(localAppData, 'RestaurantPOS', 'desktop')
+  : path.join(dataRoot, 'user-data');
 const port = 45_431;
 const password = 'electron-acceptance-pass';
 const environment = { ...process.env };
@@ -30,7 +45,9 @@ delete environment.ELECTRON_RUN_AS_NODE;
 Object.assign(environment, {
   XDG_CONFIG_HOME: path.join(dataRoot, 'config'),
   POS_ELECTRON_PORT: String(port),
-  POS_ELECTRON_USER_DATA_DIR: path.join(dataRoot, 'user-data'),
+  ...(windowsPackagedRun
+    ? { LOCALAPPDATA: localAppData }
+    : { POS_ELECTRON_USER_DATA_DIR: userDataDirectory }),
 });
 
 let desktop;
@@ -38,36 +55,6 @@ let page;
 const consoleErrors = [];
 const failedLocalRequests = [];
 const apiTraffic = [];
-
-function run(command, arguments_) {
-  return new Promise((resolve, reject) => {
-    execFile(command, arguments_, (error, stdout) => {
-      if (error) reject(error);
-      else resolve(stdout);
-    });
-  });
-}
-
-async function verifyNativeFolderDialog() {
-  if (process.env.RUN_NATIVE_FOLDER_DIALOG !== '1') return;
-  await page.getByRole('button', { name: 'اختيار مجلد' }).click();
-  const title = 'اختيار مجلد النسخ الاحتياطية';
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const windows = await run('wmctrl', ['-l']);
-    if (windows.includes(title)) {
-      await run('wmctrl', ['-c', '-r', title]);
-      await page
-        .getByText('لم يتم اختيار مجلد جديد. لم تتغير إعدادات النسخ.')
-        .waitFor();
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(
-    'The native folder chooser did not become visible to the desktop session.',
-  );
-}
 
 function requestHealth() {
   return new Promise((resolve, reject) => {
@@ -165,57 +152,21 @@ async function close() {
   await waitForStoppedHealth();
 }
 
-try {
-  await launch();
-  await page
-    .getByRole('heading', { name: 'إنشاء حساب المدير الأول' })
-    .waitFor();
-
-  await page.getByLabel('الاسم الظاهر').fill('مدير الاختبار');
-  await page.getByLabel('اسم المستخدم').fill('electron-owner');
-  await page.getByLabel('كلمة المرور').fill(password);
-  await page.getByRole('button', { name: 'إنشاء حساب المدير' }).click();
-  await page.getByRole('heading', { name: 'تسجيل الدخول' }).waitFor();
+async function signInIfNeeded() {
+  if (!(await page.getByRole('heading', { name: 'تسجيل الدخول' }).isVisible()))
+    return;
   await page.getByLabel('اسم المستخدم').fill('electron-owner');
   await page.getByLabel('كلمة المرور').fill(password);
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
+}
+
+async function assertPersistedSale() {
+  await signInIfNeeded();
   await page.getByRole('heading', { name: 'نقطة البيع' }).waitFor();
-
   await page.getByRole('button', { name: 'المنيو' }).click();
-  await page.getByRole('button', { name: '+ تصنيف جديد' }).click();
-  const categoryForm = page.locator('form').filter({ hasText: 'تصنيف جديد' });
-  await categoryForm.getByLabel('الاسم').fill('مشروبات الاختبار');
-  await categoryForm
-    .getByRole('button', { name: 'إضافة', exact: true })
-    .click();
-  await page.getByRole('button', { name: '+ صنف جديد' }).click();
-  const itemForm = page.locator('form').filter({ hasText: 'صنف جديد' });
-  await itemForm
-    .getByLabel('التصنيف')
-    .selectOption({ label: 'مشروبات الاختبار' });
-  await itemForm.getByLabel('الاسم').fill('شاي إلكترون');
-  await itemForm.getByLabel('السعر (ج.م)').fill('25');
-  await itemForm.getByRole('button', { name: 'إضافة الصنف' }).click();
   await page.getByText('شاي إلكترون', { exact: true }).last().waitFor();
-
-  await page.getByRole('button', { name: 'نقطة البيع' }).click();
-  await page.getByRole('button', { name: '+ طلب جديد' }).click();
-  await page.locator('.pos-product').filter({ hasText: 'شاي إلكترون' }).click();
-  await page.getByLabel('النقد المستلم (ج.م)').fill('30');
-  await page.getByRole('button', { name: 'تحصيل نقدي وإصدار إيصال' }).click();
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'تحصيل وإصدار الإيصال' })
-    .click();
-  await page.getByText('إيصال مطعم أفندينا').waitFor();
-
   await page.getByRole('button', { name: 'التقارير' }).click();
   await page.getByRole('heading', { name: 'تقارير المبيعات' }).waitFor();
-  await page
-    .locator('.kpi')
-    .filter({ hasText: 'الطلبات المدفوعة' })
-    .locator('strong')
-    .waitFor();
   assert.equal(
     await page
       .locator('.kpi')
@@ -223,65 +174,135 @@ try {
       .locator('strong')
       .textContent(),
     '1',
-    'The Electron report did not include the completed payment.',
+    'The paid order was not preserved after Electron restart.',
   );
+}
 
-  await page.getByRole('button', { name: 'النسخ الاحتياطية' }).click();
-  await page.getByRole('heading', { name: 'النسخ الاحتياطية' }).waitFor();
-  assert.equal(
-    await page.getByRole('button', { name: 'اختيار مجلد' }).isDisabled(),
-    false,
-    'The Electron native folder chooser bridge is not available.',
-  );
-  await verifyNativeFolderDialog();
-  await page.getByRole('button', { name: 'إنشاء نسخة الآن' }).click();
-  await page.getByLabel('اسم النسخة (اختياري)').fill('نسخة إلكترون عربية');
-  await page.getByRole('button', { name: 'إنشاء النسخة' }).click();
-  await page.locator('.backup-table').getByText('نسخة إلكترون عربية').waitFor();
-
-  const filename = await page
-    .locator('.backup-table tbody tr')
-    .first()
-    .locator('code')
-    .textContent();
-  assert.ok(filename, 'The backup filename is missing from backup history.');
-  await page
-    .locator('.backup-table tbody tr')
-    .first()
-    .getByRole('button', { name: 'استعادة' })
-    .click();
-  await page.getByLabel('كلمة مرور المدير الحالية').fill(password);
-  await page.getByLabel('عبارة التأكيد العربية').fill(`استعادة ${filename}`);
-  await page.getByRole('button', { name: 'بدء الاستعادة الآمنة' }).click();
-
-  await page
-    .getByRole('heading', { name: 'تسجيل الدخول' })
-    .waitFor({ timeout: 70_000 });
-
-  await close();
+try {
   await launch();
-  await page.getByRole('heading', { name: 'تسجيل الدخول' }).waitFor();
-  await close();
+  if (verifyExistingOnly) {
+    await assertPersistedSale();
+    await close();
+    await launch();
+    await assertPersistedSale();
+  } else {
+    await page
+      .getByRole('heading', { name: 'إنشاء حساب المدير الأول' })
+      .waitFor();
 
-  // A successful restore invalidates every session while its initiating request
-  // is still in flight, so either the restore request or the boot-time auth
-  // probe can legitimately observe the required 401.
-  const expectedSessionExpiry = consoleErrors.filter(
-    (entry) =>
-      entry.includes('401 (Unauthorized)') &&
-      (entry.includes('/api/auth/me') || entry.includes('/restore-request')),
+    await page.getByLabel('الاسم الظاهر').fill('مدير الاختبار');
+    await page.getByLabel('اسم المستخدم').fill('electron-owner');
+    await page.getByLabel('كلمة المرور').fill(password);
+    await page.getByRole('button', { name: 'إنشاء حساب المدير' }).click();
+    await page.getByRole('heading', { name: 'تسجيل الدخول' }).waitFor();
+    await page.getByLabel('اسم المستخدم').fill('electron-owner');
+    await page.getByLabel('كلمة المرور').fill(password);
+    await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
+    await page.getByRole('heading', { name: 'نقطة البيع' }).waitFor();
+
+    await page.getByRole('button', { name: 'المنيو' }).click();
+    await page.getByRole('button', { name: '+ تصنيف جديد' }).click();
+    const categoryForm = page.locator('form').filter({ hasText: 'تصنيف جديد' });
+    await categoryForm.getByLabel('الاسم').fill('مشروبات الاختبار');
+    await categoryForm
+      .getByRole('button', { name: 'إضافة', exact: true })
+      .click();
+    await page.getByRole('button', { name: '+ صنف جديد' }).click();
+    const itemForm = page.locator('form').filter({ hasText: 'صنف جديد' });
+    await itemForm
+      .getByLabel('التصنيف')
+      .selectOption({ label: 'مشروبات الاختبار' });
+    await itemForm.getByLabel('الاسم').fill('شاي إلكترون');
+    await itemForm.getByLabel('السعر (ج.م)').fill('25');
+    await itemForm.getByRole('button', { name: 'إضافة الصنف' }).click();
+    await page.getByText('شاي إلكترون', { exact: true }).last().waitFor();
+
+    await page.getByRole('button', { name: 'نقطة البيع' }).click();
+    await page.getByRole('button', { name: '+ طلب جديد' }).click();
+    await page
+      .locator('.pos-product')
+      .filter({ hasText: 'شاي إلكترون' })
+      .click();
+    await page.getByLabel('النقد المستلم (ج.م)').fill('30');
+    await page.getByRole('button', { name: 'تحصيل نقدي وإصدار إيصال' }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'تحصيل وإصدار الإيصال' })
+      .click();
+    await page.getByText('إيصال مطعم أفندينا').waitFor();
+
+    await page.getByRole('button', { name: 'التقارير' }).click();
+    await page.getByRole('heading', { name: 'تقارير المبيعات' }).waitFor();
+    await page
+      .locator('.kpi')
+      .filter({ hasText: 'الطلبات المدفوعة' })
+      .locator('strong')
+      .waitFor();
+    assert.equal(
+      await page
+        .locator('.kpi')
+        .filter({ hasText: 'الطلبات المدفوعة' })
+        .locator('strong')
+        .textContent(),
+      '1',
+      'The Electron report did not include the completed payment.',
+    );
+
+    await page.getByRole('button', { name: 'النسخ الاحتياطية' }).click();
+    await page.getByRole('heading', { name: 'النسخ الاحتياطية' }).waitFor();
+    assert.equal(
+      await page.getByRole('button', { name: 'اختيار مجلد' }).count(),
+      0,
+      'Unreliable backup-folder controls must not be shown.',
+    );
+    assert.equal(
+      await page.getByRole('button', { name: 'إدخال مسار يدوي' }).count(),
+      0,
+      'Manual backup path input must not be shown.',
+    );
+    assert.equal(
+      await page.getByRole('button', { name: 'فتح المجلد' }).count(),
+      0,
+      'Unsupported backup folder opening must not be shown.',
+    );
+    await page.getByRole('button', { name: 'إنشاء نسخة الآن' }).click();
+    await page.getByLabel('اسم النسخة (اختياري)').fill('نسخة إلكترون عربية');
+    await page.getByRole('button', { name: 'إنشاء النسخة' }).click();
+    await page
+      .locator('.backup-table')
+      .getByText('نسخة إلكترون عربية')
+      .waitFor();
+    await page.getByRole('button', { name: 'إغلاق الإشعار' }).click();
+    assert.equal(
+      await page.locator('.page-toast').count(),
+      0,
+      'A notice must be dismissible.',
+    );
+    assert.ok(
+      (await page.locator('.page-toast').count()) <= 3,
+      'More than three notices are visible.',
+    );
+
+    for (let restart = 0; restart < 3; restart += 1) {
+      await close();
+      await launch();
+      await assertPersistedSale();
+    }
+  }
+  const desktopLog = fs.readFileSync(
+    path.join(userDataDirectory, 'logs', 'desktop.log'),
+    'utf8',
   );
-  const unexpectedConsoleErrors = consoleErrors.filter(
-    (entry) => !expectedSessionExpiry.includes(entry),
+  assert.doesNotMatch(
+    desktopLog,
+    /EADDRINUSE/i,
+    'A restart encountered a local address or named-pipe conflict.',
   );
-  assert.ok(
-    expectedSessionExpiry.length > 0,
-    'Restore did not invalidate the previous Electron session.',
-  );
+
   assert.deepEqual(
-    unexpectedConsoleErrors,
+    consoleErrors,
     [],
-    `Unexpected renderer console errors: ${unexpectedConsoleErrors.join('\n')}`,
+    `Unexpected renderer console errors: ${consoleErrors.join('\n')}`,
   );
   assert.deepEqual(
     failedLocalRequests,
@@ -289,10 +310,10 @@ try {
     `Failed local requests: ${failedLocalRequests.join('\n')}`,
   );
   console.log(
-    `Electron Linux acceptance passed with isolated data at ${dataRoot}.`,
+    `Packaged Electron acceptance passed with isolated data at ${dataRoot}.`,
   );
 } catch (error) {
-  const logDirectory = path.join(dataRoot, 'user-data', 'logs');
+  const logDirectory = path.join(userDataDirectory, 'logs');
   const diagnostics = [
     'desktop.log',
     'application.log',
@@ -317,5 +338,5 @@ try {
   );
 } finally {
   await close().catch(() => undefined);
-  await rm(dataRoot, { recursive: true, force: true });
+  if (!keepData) await rm(dataRoot, { recursive: true, force: true });
 }

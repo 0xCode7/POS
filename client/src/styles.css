@@ -468,12 +468,31 @@ h3 {
 .page-toast {
   position: fixed;
   z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   inset-inline-end: 22px;
   bottom: 22px;
   width: min(420px, calc(100vw - 32px));
   margin: 0;
   box-shadow: var(--shadow-lg);
   animation: toast-in 180ms ease-out;
+}
+.notice-dismiss {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: currentcolor;
+  background: transparent;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+.notice-dismiss:hover {
+  background: rgb(0 0 0 / 8%);
 }
 @keyframes toast-in {
   from {

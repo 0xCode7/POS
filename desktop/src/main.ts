@@ -1,5 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -7,28 +6,42 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 
+// Capture Electron's original default before assigning the Arabic product name.
+// Earlier Electron previews used that default location, so it is a candidate
+// for existing customer data during a safe, non-destructive upgrade.
+const legacyElectronUserDataDirectory = app.getPath('userData');
+app.setName('مطعم أفندينا');
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const runtimeDirectory = currentDirectory;
 const backendPort = Number(process.env.POS_ELECTRON_PORT ?? 0);
 const configuredUserDataDirectory = process.env.POS_ELECTRON_USER_DATA_DIR;
+// This is the location used by the Electron build before data was moved to the
+// stable Windows per-user directory below. It is read-only for migration
+// selection: existing customer data is never moved, copied, or overwritten.
+
+function windowsApplicationDirectory() {
+  const base = process.env.LOCALAPPDATA;
+  if (!base || !path.isAbsolute(base)) {
+    throw new Error('تعذر تحديد مجلد بيانات Windows المحلي للمستخدم الحالي.');
+  }
+  return path.join(base, 'RestaurantPOS');
+}
+
 if (configuredUserDataDirectory) {
   if (!path.isAbsolute(configuredUserDataDirectory))
     throw new Error('POS_ELECTRON_USER_DATA_DIR must be an absolute path.');
   app.setPath('userData', path.normalize(configuredUserDataDirectory));
+} else if (process.platform === 'win32') {
+  // Keep Electron preferences/logs separate from the financial SQLite data,
+  // while retaining both in one stable per-user Windows location.
+  app.setPath('userData', path.join(windowsApplicationDirectory(), 'desktop'));
 }
 let backend: ChildProcess | undefined;
-let bridge: net.Server | undefined;
-let bridgeSocket = '';
-let bridgeSecret = '';
 let mainWindow: BrowserWindow | undefined;
 let isQuitting = false;
 let activePort: number | undefined;
-
-type BridgeRequest = {
-  secret?: string;
-  action?: 'pick-directory' | 'open-directory';
-  directory?: string;
-};
+let dataDirectory: string | undefined;
+let startupFailure = '';
 
 function iconPath() {
   return process.platform === 'win32'
@@ -40,7 +53,7 @@ function paths() {
   const userData = app.getPath('userData');
   return {
     userData,
-    data: path.join(userData, 'data'),
+    data: resolveDataDirectory(),
     logs: path.join(userData, 'logs'),
     server: path.join(runtimeDirectory, 'server', 'index.js'),
     client: path.join(runtimeDirectory, 'client'),
@@ -52,6 +65,33 @@ function paths() {
       'supervisor-cli.js',
     ),
   };
+}
+
+function resolveDataDirectory() {
+  if (dataDirectory) return dataDirectory;
+  if (configuredUserDataDirectory) {
+    dataDirectory = path.join(app.getPath('userData'), 'data');
+    return dataDirectory;
+  }
+  if (process.platform !== 'win32') {
+    dataDirectory = path.join(app.getPath('userData'), 'data');
+    return dataDirectory;
+  }
+
+  const stable = path.join(windowsApplicationDirectory(), 'data');
+  const legacy = path.join(legacyElectronUserDataDirectory, 'data');
+  const existing = [...new Set([stable, legacy])].filter((directory) =>
+    fs.existsSync(path.join(directory, 'restaurant-pos.sqlite')),
+  );
+  if (existing.length > 1) {
+    throw new Error(
+      `عُثر على أكثر من قاعدة بيانات حالية. لحماية بيانات المطعم لن يختار التطبيق واحدة تلقائيًا. المسارات: ${existing.join(' | ')}`,
+    );
+  }
+  // An installation upgraded from the earlier Electron build keeps using its
+  // single existing database in place. New installations use LOCALAPPDATA.
+  dataDirectory = existing[0] ?? stable;
+  return dataDirectory;
 }
 
 function desktopLog(event: string, message: string) {
@@ -89,73 +129,6 @@ function allocatePort() {
   });
 }
 
-function desktopBridgePath(dataDirectory: string) {
-  const id = createHash('sha256')
-    .update(dataDirectory)
-    .digest('hex')
-    .slice(0, 20);
-  return process.platform === 'win32'
-    ? `\\\\.\\pipe\\restaurant-pos-electron-${id}`
-    : path.join(dataDirectory, '.restaurant-pos-electron.sock');
-}
-
-async function startDesktopBridge() {
-  const { data } = paths();
-  fs.mkdirSync(data, { recursive: true, mode: 0o700 });
-  bridgeSocket = desktopBridgePath(data);
-  bridgeSecret = randomBytes(32).toString('base64url');
-  if (process.platform !== 'win32') fs.rmSync(bridgeSocket, { force: true });
-  bridge = net.createServer((connection) => {
-    let raw = '';
-    connection.setEncoding('utf8');
-    connection.on('data', (chunk) => (raw += chunk));
-    connection.on('end', () => void handleBridgeRequest(connection, raw));
-  });
-  await new Promise<void>((resolve, reject) => {
-    bridge?.once('error', reject);
-    bridge?.listen(bridgeSocket, resolve);
-  });
-}
-
-async function handleBridgeRequest(connection: net.Socket, raw: string) {
-  try {
-    const request = JSON.parse(raw) as BridgeRequest;
-    if (request.secret !== bridgeSecret)
-      throw new Error('طلب سطح المكتب غير مصرح به.');
-    if (request.action === 'pick-directory') {
-      const result = await dialog.showOpenDialog({
-        title: 'اختيار مجلد النسخ الاحتياطية',
-        properties: ['openDirectory', 'createDirectory'],
-      });
-      return bridgeReply(connection, true, {
-        directory: result.canceled ? undefined : result.filePaths[0],
-      });
-    }
-    if (request.action === 'open-directory' && request.directory) {
-      const result = await shell.openPath(request.directory);
-      if (result) throw new Error('تعذر فتح مجلد النسخ المحلي.');
-      return bridgeReply(connection, true, {});
-    }
-    throw new Error('طلب سطح المكتب غير صالح.');
-  } catch (error) {
-    bridgeReply(
-      connection,
-      false,
-      undefined,
-      error instanceof Error ? error.message : 'فشل طلب سطح المكتب.',
-    );
-  }
-}
-
-function bridgeReply(
-  connection: net.Socket,
-  ok: boolean,
-  result?: unknown,
-  error?: string,
-) {
-  connection.end(`${JSON.stringify({ ok, result, error })}\n`);
-}
-
 async function startBackend(port: number) {
   const runtime = paths();
   if (!fs.existsSync(runtime.supervisor))
@@ -174,14 +147,18 @@ async function startBackend(port: number) {
       POS_CLIENT_DIR: runtime.client,
       POS_MIGRATIONS_DIR: runtime.migrations,
       POS_LOG_DIR: runtime.logs,
-      POS_ELECTRON_BRIDGE_SOCKET: bridgeSocket,
-      POS_ELECTRON_BRIDGE_SECRET: bridgeSecret,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
-  const writeLog = (name: string) => (chunk: Buffer) =>
+  const writeLog = (name: string) => (chunk: Buffer) => {
+    const output = chunk.toString('utf8');
+    if (output.includes('EADDRINUSE')) {
+      startupFailure =
+        'تعذر تشغيل الخدمة المحلية لأن نسخة أخرى تستخدم مورد التشغيل. أغلق النسخة الأخرى ثم أعد المحاولة.';
+    }
     fs.appendFileSync(path.join(runtime.logs, name), chunk);
+  };
   backend.stdout?.on('data', writeLog('backend.stdout.log'));
   backend.stderr?.on('data', writeLog('backend.stderr.log'));
   desktopLog(
@@ -193,6 +170,10 @@ async function startBackend(port: number) {
       'supervisor_exited',
       `code=${code ?? 'null'} signal=${signal ?? 'none'}`,
     );
+    if (!isQuitting && !startupFailure) {
+      startupFailure =
+        'توقفت الخدمة المحلية أثناء بدء التشغيل. راجع السجل المحلي ثم أعد المحاولة.';
+    }
     backend = undefined;
   });
 }
@@ -201,6 +182,7 @@ async function waitForHealth(port: number) {
   const deadline = Date.now() + 30_000;
   return new Promise<void>((resolve, reject) => {
     const probe = () => {
+      if (startupFailure) return reject(new Error(startupFailure));
       const request = http.get(
         `http://127.0.0.1:${port}/api/health`,
         (response) => {
@@ -408,52 +390,80 @@ function errorWindow(error: unknown) {
 
 async function launch() {
   try {
+    startupFailure = '';
     desktopLog('desktop_starting', `version=${app.getVersion()}`);
+    desktopLog('data_directory', paths().data);
     const port = await allocatePort();
-    await startDesktopBridge();
     await startBackend(port);
     await waitForHealth(port);
+    if (!backend?.pid) {
+      throw new Error('توقفت الخدمة المحلية قبل اكتمال تشغيل التطبيق.');
+    }
     activePort = port;
     desktopLog('renderer_origin', `http://127.0.0.1:${port}`);
     createWindow(`http://127.0.0.1:${port}`);
   } catch (error) {
+    await stopBackend();
     errorWindow(error);
   }
 }
 
 async function stopBackend() {
   activePort = undefined;
-  if (!backend?.pid) return;
-  backend.kill('SIGTERM');
-  await new Promise<void>((resolve) => {
+  const managed = backend;
+  if (!managed?.pid) return;
+  const stopped = await new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
-      if (backend?.pid) backend.kill('SIGKILL');
-      resolve();
+      resolve(false);
     }, 12_000);
-    backend?.once('exit', () => {
+    managed.once('exit', () => {
       clearTimeout(timer);
-      resolve();
+      resolve(true);
     });
+    managed.kill('SIGTERM');
   });
+  if (stopped || !managed.pid) return;
+  if (process.platform === 'win32') {
+    // This PID was spawned directly by this Electron process. /t is confined
+    // to its child tree and never targets an unrelated Node.js process.
+    spawnSync('taskkill.exe', ['/pid', String(managed.pid), '/t', '/f'], {
+      windowsHide: true,
+    });
+    return;
+  }
+  managed.kill('SIGKILL');
 }
 
-app.setName('مطعم أفندينا');
-app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null);
-  setupIpc();
-  await launch();
-});
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0 && !isQuitting) void launch();
-});
-app.on('before-quit', (event) => {
-  if (isQuitting) return;
-  event.preventDefault();
-  isQuitting = true;
-  void stopBackend().finally(() => {
-    bridge?.close();
-    if (process.platform !== 'win32' && bridgeSocket)
-      fs.rmSync(bridgeSocket, { force: true });
+const ownsDesktopInstance = app.requestSingleInstanceLock();
+if (!ownsDesktopInstance) {
+  void app.whenReady().then(async () => {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: 'مطعم أفندينا يعمل بالفعل',
+      message: 'التطبيق مفتوح بالفعل. استخدم النافذة الحالية.',
+      buttons: ['حسنًا'],
+    });
     app.quit();
   });
-});
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+  app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
+    setupIpc();
+    await launch();
+  });
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0 && !isQuitting)
+      void launch();
+  });
+  app.on('before-quit', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    isQuitting = true;
+    void stopBackend().finally(() => app.quit());
+  });
+}

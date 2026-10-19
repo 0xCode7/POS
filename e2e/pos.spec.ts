@@ -183,10 +183,14 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
   await expect(
     page.getByRole('heading', { name: 'النسخ الاحتياطية' }),
   ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'اختيار مجلد' })).toHaveCount(
+    0,
+  );
   await expect(
     page.getByRole('button', { name: 'إدخال مسار يدوي' }),
-  ).toBeDisabled();
-  await expect(page.getByText(/متغير POS_BACKUP_DIR/)).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'فتح المجلد' })).toHaveCount(0);
+  await expect(page.getByText(/هذا المسار للعرض فقط/)).toBeVisible();
   await page.getByRole('button', { name: 'إنشاء نسخة الآن' }).click();
   await expect(
     page.getByRole('heading', { name: 'إنشاء نسخة احتياطية يدوية' }),
@@ -196,11 +200,8 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
   await expect(page.locator('.backup-table tbody tr')).toHaveCount(2);
   await expect(page.locator('.backup-table')).toContainText('نسخة اختبار');
   await expect(
-    page
-      .locator('.backup-table tbody tr')
-      .first()
-      .getByRole('button', { name: 'مشرف التشغيل غير متاح' }),
-  ).toBeDisabled();
+    page.getByText('الاستعادة من الواجهة متوقفة مؤقتًا'),
+  ).toBeVisible();
   await expect(
     page.getByText('الاستعادة تعتمد على مشرف تشغيل موثوق'),
   ).toBeVisible();

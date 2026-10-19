@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, type Page } from './api';
-import { waitForDesktopServiceRecovery } from './desktop';
 import { useSiteDialog } from './SiteDialog';
+import { Notice } from './Notice';
 
 type BackupRecord = {
   filename: string;
@@ -15,13 +15,10 @@ type BackupRecord = {
   compatibility: 'compatible' | 'incompatible' | 'unverified';
   compatibilityMessage: string;
   pendingMigrations: number;
-  restoreEligible: boolean;
   validationMessage: string;
 };
 type BackupStatus = {
   directory: string;
-  directorySource: 'environment' | 'saved' | 'default';
-  environmentManaged: boolean;
   previousDirectories: string[];
   retentionDays: number;
   automaticEnabled: boolean;
@@ -30,14 +27,6 @@ type BackupStatus = {
   lastError: { at: string; message: string } | null;
   sameDisk: boolean | null;
   sameDiskWarning: string;
-  restoreMode: 'offline-cli';
-  openFolderSupported: boolean;
-  openFolderMessage: string;
-  nativeFolderPicker: { available: boolean; message: string };
-};
-type RestoreStatus = {
-  ready: boolean;
-  operation: { status: string; message: string };
 };
 
 const dateTime = new Intl.DateTimeFormat('ar-EG', {
@@ -65,7 +54,6 @@ export function BackupScreen({
 }) {
   const [status, setStatus] = useState<BackupStatus>();
   const [history, setHistory] = useState<Page<BackupRecord>>();
-  const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -90,14 +78,12 @@ export function BackupScreen({
     });
     if (search.trim()) query.set('search', search.trim());
     try {
-      const [statusData, historyData, supervisorData] = await Promise.all([
+      const [statusData, historyData] = await Promise.all([
         api<{ backups: BackupStatus }>('/api/admin/backups'),
         api<Page<BackupRecord>>(`/api/admin/backups/history?${query}`),
-        api<RestoreStatus>('/api/admin/backups/restore-status'),
       ]);
       setStatus(statusData.backups);
       setHistory(historyData);
-      setRestoreStatus(supervisorData);
     } catch (cause) {
       fail(cause);
     } finally {
@@ -144,142 +130,6 @@ export function BackupScreen({
     }
   };
 
-  const chooseDirectory = async () => {
-    if (!status || busy || status.environmentManaged) return;
-    setBusy(true);
-    setError('');
-    try {
-      const selected = await api<
-        { selected: false } | { selected: true; directory: string }
-      >('/api/admin/backups/pick-directory', { method: 'POST' });
-      if (!selected.selected) {
-        setNotice('لم يتم اختيار مجلد جديد. لم تتغير إعدادات النسخ.');
-        return;
-      }
-      const confirmation = await ask({
-        title: 'تأكيد مجلد النسخ الجديد',
-        message: `تم التحقق من إمكانية الكتابة في هذا المسار: ${selected.directory}\nستبقى النسخ الحالية في مواقعها، وستستخدم النسخ التالية هذا المجلد فقط.`,
-        confirmLabel: 'حفظ المجلد',
-        cancelLabel: 'إلغاء',
-      });
-      if (!confirmation) return;
-      const response = await api<{ backups: BackupStatus }>(
-        '/api/admin/backups/settings',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ directory: selected.directory }),
-        },
-      );
-      setStatus(response.backups);
-      setNotice('تم حفظ المجلد الجديد. ستستخدمه النسخ القادمة فقط.');
-      setPage(1);
-      await load();
-    } catch (cause) {
-      fail(cause);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openDirectory = async () => {
-    if (busy || !status?.openFolderSupported) return;
-    setBusy(true);
-    setError('');
-    try {
-      await api('/api/admin/backups/open-directory', { method: 'POST' });
-      setNotice('تم إرسال طلب فتح مجلد النسخ المحلي.');
-    } catch (cause) {
-      fail(cause);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const requestRestore = async (backup: BackupRecord) => {
-    if (!restoreStatus?.ready || busy) return;
-    const phrase = `استعادة ${backup.filename}`;
-    const result = await ask({
-      title: 'استعادة نسخة احتياطية',
-      message: `قد تختفي المبيعات المسجلة بعد تاريخ هذه النسخة. ستُنشأ نسخة قبل الاستعادة ثم تتوقف الخدمة مؤقتًا. اكتب العبارة كاملة: ${phrase}`,
-      confirmLabel: 'بدء الاستعادة الآمنة',
-      cancelLabel: 'إلغاء',
-      tone: 'danger',
-      fields: [
-        {
-          name: 'password',
-          label: 'كلمة مرور المدير الحالية',
-          type: 'password',
-          required: true,
-        },
-        {
-          name: 'confirmation',
-          label: 'عبارة التأكيد العربية',
-          type: 'text',
-          required: true,
-        },
-      ],
-    });
-    if (!result) return;
-    setBusy(true);
-    try {
-      await api(`/api/admin/backups/${backup.filename}/restore-request`, {
-        method: 'POST',
-        body: JSON.stringify(result),
-      });
-      setNotice(
-        'تم قبول طلب الاستعادة. ستتوقف الخدمة مؤقتًا ثم ستحتاج إلى تسجيل الدخول مجددًا.',
-      );
-      if (await waitForDesktopServiceRecovery()) {
-        window.location.reload();
-        return;
-      }
-      await load();
-    } catch (cause) {
-      fail(cause);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const changeDirectory = async () => {
-    if (!status || status.environmentManaged) return;
-    const result = await ask({
-      title: 'تغيير مجلد النسخ المستقبلية',
-      message:
-        'أدخل مسارًا مطلقًا يستطيع حساب تشغيل الخدمة الكتابة إليه. النسخ الموجودة ستبقى في مواقعها الحالية.',
-      confirmLabel: 'فحص وحفظ المسار',
-      fields: [
-        {
-          name: 'directory',
-          label: 'المسار المطلق',
-          type: 'text',
-          required: true,
-          value: status.directory,
-        },
-      ],
-    });
-    if (!result?.directory.trim()) return;
-    setBusy(true);
-    setError('');
-    try {
-      const response = await api<{ backups: BackupStatus }>(
-        '/api/admin/backups/settings',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ directory: result.directory.trim() }),
-        },
-      );
-      setStatus(response.backups);
-      setNotice('تم حفظ المجلد الجديد. ستستخدمه النسخ القادمة فقط.');
-      setPage(1);
-      await load();
-    } catch (cause) {
-      fail(cause);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (loading && !status)
     return <div className="empty-state">جارٍ تحميل حالة النسخ…</div>;
 
@@ -298,8 +148,16 @@ export function BackupScreen({
           {busy || status?.running ? 'جارٍ تنفيذ العملية…' : 'إنشاء نسخة الآن'}
         </button>
       </div>
-      {error && <p className="form-error page-toast">{error}</p>}
-      {notice && <p className="success-message page-toast">{notice}</p>}
+      {error && (
+        <Notice message={error} tone="error" onDismiss={() => setError('')} />
+      )}
+      {notice && (
+        <Notice
+          message={notice}
+          tone="success"
+          onDismiss={() => setNotice('')}
+        />
+      )}
 
       {status && (
         <>
@@ -329,59 +187,16 @@ export function BackupScreen({
                 <p className="eyebrow">موقع الحفظ الحالي</p>
                 <h2>مجلد النسخ</h2>
               </div>
-              <div className="row-actions">
-                <button
-                  className="secondary"
-                  disabled={busy || !status.openFolderSupported}
-                  title={status.openFolderMessage}
-                  onClick={() => void openDirectory()}
-                >
-                  فتح المجلد
-                </button>
-                <button
-                  disabled={
-                    busy ||
-                    status.environmentManaged ||
-                    !status.nativeFolderPicker.available
-                  }
-                  title={status.nativeFolderPicker.message}
-                  onClick={() => void chooseDirectory()}
-                >
-                  اختيار مجلد
-                </button>
-                <button
-                  className="secondary"
-                  disabled={busy || status.environmentManaged}
-                  onClick={() => void changeDirectory()}
-                >
-                  إدخال مسار يدوي
-                </button>
-              </div>
             </div>
             <code className="backup-path" dir="ltr">
               {status.directory}
             </code>
-            <p className="muted">
-              المصدر:{' '}
-              {status.directorySource === 'environment'
-                ? 'متغير POS_BACKUP_DIR — التغيير من الواجهة معطل'
-                : status.directorySource === 'saved'
-                  ? 'إعداد محلي محفوظ'
-                  : 'الموقع الافتراضي المحلي'}
-            </p>
+            <p className="muted">هذا المسار للعرض فقط ويُدار محليًا بأمان.</p>
             {status.sameDisk !== false && (
               <p className="backup-warning">
                 {status.sameDisk === true
                   ? status.sameDiskWarning
                   : 'تعذر التأكد هل المجلد على قرص مختلف؛ تحقق يدويًا للحماية من تعطل القرص.'}
-              </p>
-            )}
-            {!status.openFolderSupported && (
-              <p className="backup-info-message">{status.openFolderMessage}</p>
-            )}
-            {!status.nativeFolderPicker.available && (
-              <p className="backup-info-message">
-                {status.nativeFolderPicker.message}
               </p>
             )}
             {status.previousDirectories.length > 0 && (
@@ -406,8 +221,9 @@ export function BackupScreen({
             </p>
           )}
           <section className="backup-info-message">
-            <strong>حالة الاستعادة: </strong>
-            {restoreStatus?.operation.message ?? 'جارٍ التحقق من مشرف التشغيل.'}
+            <strong>الاستعادة: </strong>
+            الاستعادة من الواجهة متوقفة مؤقتًا للحفاظ على استقرار التشغيل.
+            استخدم أداة الصيانة المحلية الموثقة عند الحاجة.
           </section>
 
           <section className="panel backup-history-panel">
@@ -438,7 +254,6 @@ export function BackupScreen({
                       <th>التاريخ</th>
                       <th>الحجم</th>
                       <th>الحالة</th>
-                      <th>الإجراء</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -483,26 +298,6 @@ export function BackupScreen({
                                 ? 'غير متوافقة'
                                 : 'لم يُفحص'}
                           </small>
-                        </td>
-                        <td>
-                          <button
-                            className="secondary danger"
-                            disabled={
-                              busy ||
-                              !backup.restoreEligible ||
-                              !restoreStatus?.ready
-                            }
-                            title={
-                              restoreStatus?.ready
-                                ? 'ابدأ الاستعادة بعد التحقق وإعادة المصادقة.'
-                                : 'الاستعادة تتطلب تشغيل مشرف التطبيق الموثوق.'
-                            }
-                            onClick={() => void requestRestore(backup)}
-                          >
-                            {restoreStatus?.ready
-                              ? 'استعادة'
-                              : 'مشرف التشغيل غير متاح'}
-                          </button>
                         </td>
                       </tr>
                     ))}

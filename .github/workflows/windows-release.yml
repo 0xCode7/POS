@@ -82,3 +82,8 @@ jobs:
         shell: powershell
         run: |
           .\scripts\windows\Test-ElectronPackage.ps1
+
+      - name: Verify installed Electron shortcuts and data persistence
+        shell: powershell
+        run: |
+          .\scripts\windows\Test-ElectronInstaller.ps1

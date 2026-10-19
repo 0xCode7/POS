@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, type Page, type Receipt } from './api';
 import { openReceiptPrintDialog } from './desktop';
 import { configureReceiptPrintPage, ReceiptView } from './POSScreen';
+import { Notice } from './Notice';
 
 type Range = { start: string; end: string };
 type Summary = {
@@ -235,9 +236,7 @@ export function ReportsDashboard({
         <button>تطبيق</button>
       </form>
       {error && (
-        <p className="form-error page-toast" role="alert">
-          {error}
-        </p>
+        <Notice message={error} tone="error" onDismiss={() => setError('')} />
       )}
       {loading ? (
         <div className="empty-state">جارٍ تحميل التقارير…</div>
