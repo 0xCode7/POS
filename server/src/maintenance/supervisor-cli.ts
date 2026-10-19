@@ -194,7 +194,6 @@ function startBackend() {
 async function stopBackend() {
   if (!child) return;
   const stopping = child;
-  stopping.kill('SIGTERM');
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error('تعذر إيقاف الخدمة في الوقت المحدد.')),
@@ -204,6 +203,10 @@ async function stopBackend() {
       clearTimeout(timer);
       resolve();
     });
+    if (!stopping.kill('SIGTERM')) {
+      clearTimeout(timer);
+      reject(new Error('تعذر إرسال طلب الإيقاف إلى الخدمة.'));
+    }
   });
 }
 
@@ -276,13 +279,23 @@ function supervisorSocket(directory: string) {
 function shutdownSupervisor() {
   if (shuttingDown) return;
   shuttingDown = true;
-  ipc.close();
-  void stopBackend().finally(() => {
-    fs.rmSync(controlFile, { force: true });
-    if (process.platform !== 'win32') fs.rmSync(socket, { force: true });
-    releaseSupervisorLock();
-    process.exit();
-  });
+  void stopBackend()
+    .then(() => {
+      ipc.close();
+      fs.rmSync(controlFile, { force: true });
+      if (process.platform !== 'win32') fs.rmSync(socket, { force: true });
+      releaseSupervisorLock();
+      process.exit();
+    })
+    .catch((error: unknown) => {
+      // Do not exit and orphan a backend that could still be serving payments.
+      // Keep its IPC listener and lock/control record for a later safe retry.
+      shuttingDown = false;
+      console.error(
+        'Restaurant POS Supervisor could not stop its managed backend:',
+        error,
+      );
+    });
 }
 
 function writeControlFile() {
