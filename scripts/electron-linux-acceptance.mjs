@@ -289,7 +289,12 @@ try {
   );
 } catch (error) {
   const logDirectory = path.join(dataRoot, 'user-data', 'logs');
-  const diagnostics = ['desktop.log', 'application.log']
+  const diagnostics = [
+    'desktop.log',
+    'application.log',
+    'backend.stdout.log',
+    'backend.stderr.log',
+  ]
     .map((name) => {
       try {
         return `${name}:\n${fs.readFileSync(path.join(logDirectory, name), 'utf8')}`;
