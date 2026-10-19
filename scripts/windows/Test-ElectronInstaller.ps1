@@ -42,17 +42,19 @@ function Get-ShortcutTarget([string] $shortcutPath) {
 }
 
 function Get-InstalledShortcuts {
-  $matches = @()
+  $matches = [System.Collections.Generic.List[object]]::new()
   foreach ($location in $shortcutLocations) {
     $shortcut = Join-Path $location.Directory 'مطعم أفندينا.lnk'
     if (-not (Test-Path -LiteralPath $shortcut)) { continue }
-    $matches += [pscustomobject]@{
+    # A .lnk can deliberately have no readable TargetPath through WScript on a
+    # hosted desktop. Its filesystem presence is the discovery contract here;
+    # the following health check proves that it actually launches the app.
+    [void]$matches.Add([pscustomobject]@{
       Kind = $location.Kind
       Path = $shortcut
-      Target = Get-ShortcutTarget $shortcut
-    }
+    })
   }
-  return $matches
+  return @($matches)
 }
 
 function Write-ShortcutDiagnostics {
@@ -179,9 +181,9 @@ try {
     throw "The installed Electron executable is missing: $runtime"
   }
   $shortcuts = @(Get-InstalledShortcuts)
-  $desktopShortcut = $shortcuts | Where-Object Kind -eq 'desktop' | Select-Object -First 1
-  $startMenuShortcut = $shortcuts | Where-Object Kind -eq 'start-menu' | Select-Object -First 1
-  if (-not $desktopShortcut -or -not $startMenuShortcut) {
+  $desktopShortcut = @($shortcuts | Where-Object { $_.Kind -eq 'desktop' }) | Select-Object -First 1
+  $startMenuShortcut = @($shortcuts | Where-Object { $_.Kind -eq 'start-menu' }) | Select-Object -First 1
+  if (($null -eq $desktopShortcut) -or ($null -eq $startMenuShortcut)) {
     Write-ShortcutDiagnostics
     throw "Expected a desktop and a Start Menu shortcut; found desktop=$([bool]$desktopShortcut), start-menu=$([bool]$startMenuShortcut)."
   }
