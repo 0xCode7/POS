@@ -27,8 +27,11 @@ export class SupervisorClient {
         reject(new Error('انتهت مهلة الاتصال بمشرف التشغيل.'));
       }, 5_000);
       connection.setEncoding('utf8');
+      // Keep the read side of a Windows named-pipe connection open until the
+      // Supervisor has replied. Calling end() here can race its reply and
+      // produce EPIPE, which used to crash the Supervisor and its backend.
       connection.on('connect', () =>
-        connection.end(`${JSON.stringify({ secret, method, params })}\n`),
+        connection.write(`${JSON.stringify({ secret, method, params })}\n`),
       );
       connection.on('data', (chunk) => (response += chunk));
       connection.on('error', reject);

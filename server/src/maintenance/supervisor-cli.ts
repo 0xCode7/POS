@@ -59,69 +59,86 @@ ipc.listen(socket, () => {
 
 function handleConnection(connection: net.Socket) {
   let raw = '';
+  let handled = false;
   connection.setEncoding('utf8');
-  connection.on('data', (chunk) => (raw += chunk));
-  connection.on('end', () => {
-    try {
-      const message = JSON.parse(raw) as {
-        secret?: string;
-        controlSecret?: string;
-        method?: string;
-        params?: {
-          filename?: string;
-          token?: string;
-          actorId?: string;
-          expiresAt?: string;
-        };
-      };
-      if (message.method === 'stop') {
-        if (message.controlSecret !== controlSecret)
-          return reply(connection, false, undefined, 'طلب IPC غير مصرح به.');
-        reply(connection, true, { stopping: true });
-        setImmediate(shutdownSupervisor);
-        return;
-      }
-      if (message.secret !== secret)
-        return reply(connection, false, undefined, 'طلب IPC غير مصرح به.');
-      if (message.method === 'status')
-        return reply(connection, true, {
-          ready: Boolean(child?.pid),
-          operation,
-        });
-      if (
-        message.method !== 'restore' ||
-        !message.params?.filename ||
-        !message.params.token ||
-        !message.params.actorId ||
-        !message.params.expiresAt
-      )
-        return reply(connection, false, undefined, 'طلب الاستعادة غير صالح.');
-      if (
-        Date.parse(message.params.expiresAt) <= Date.now() ||
-        active(operation.status)
-      )
-        return reply(
-          connection,
-          false,
-          undefined,
-          'الاستعادة غير متاحة حاليًا.',
-        );
-      operation = update({
-        id: createHash('sha256')
-          .update(message.params.token)
-          .digest('hex')
-          .slice(0, 16),
-        status: 'PREPARING',
-        filename: message.params.filename,
-        updatedAt: new Date().toISOString(),
-        message: 'جارٍ تجهيز الاستعادة.',
-      });
-      reply(connection, true, { accepted: true, operation });
-      void restoreManaged(message.params.filename);
-    } catch {
-      reply(connection, false, undefined, 'طلب IPC غير صالح.');
+  // A local client may be closed while a reply is being written (notably with
+  // Windows named pipes). An IPC client disconnect must never terminate the
+  // Supervisor, because it owns the payment-serving backend process.
+  connection.on('error', (error) => {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'EPIPE' && code !== 'ECONNRESET') {
+      console.error(`Supervisor IPC connection error: ${code ?? error.name}`);
     }
   });
+  connection.on('data', (chunk) => {
+    raw += chunk;
+    const newline = raw.indexOf('\n');
+    if (handled || newline === -1) return;
+    handled = true;
+    handleMessage(connection, raw.slice(0, newline));
+  });
+  connection.on('end', () => {
+    if (handled) return;
+    handled = true;
+    handleMessage(connection, raw);
+  });
+}
+
+function handleMessage(connection: net.Socket, raw: string) {
+  try {
+    const message = JSON.parse(raw) as {
+      secret?: string;
+      controlSecret?: string;
+      method?: string;
+      params?: {
+        filename?: string;
+        token?: string;
+        actorId?: string;
+        expiresAt?: string;
+      };
+    };
+    if (message.method === 'stop') {
+      if (message.controlSecret !== controlSecret)
+        return reply(connection, false, undefined, 'طلب IPC غير مصرح به.');
+      reply(connection, true, { stopping: true });
+      setImmediate(shutdownSupervisor);
+      return;
+    }
+    if (message.secret !== secret)
+      return reply(connection, false, undefined, 'طلب IPC غير مصرح به.');
+    if (message.method === 'status')
+      return reply(connection, true, {
+        ready: Boolean(child?.pid),
+        operation,
+      });
+    if (
+      message.method !== 'restore' ||
+      !message.params?.filename ||
+      !message.params.token ||
+      !message.params.actorId ||
+      !message.params.expiresAt
+    )
+      return reply(connection, false, undefined, 'طلب الاستعادة غير صالح.');
+    if (
+      Date.parse(message.params.expiresAt) <= Date.now() ||
+      active(operation.status)
+    )
+      return reply(connection, false, undefined, 'الاستعادة غير متاحة حاليًا.');
+    operation = update({
+      id: createHash('sha256')
+        .update(message.params.token)
+        .digest('hex')
+        .slice(0, 16),
+      status: 'PREPARING',
+      filename: message.params.filename,
+      updatedAt: new Date().toISOString(),
+      message: 'جارٍ تجهيز الاستعادة.',
+    });
+    reply(connection, true, { accepted: true, operation });
+    void restoreManaged(message.params.filename);
+  } catch {
+    reply(connection, false, undefined, 'طلب IPC غير صالح.');
+  }
 }
 
 async function restoreManaged(filename: string) {
@@ -262,7 +279,15 @@ function reply(
   result?: unknown,
   error?: string,
 ) {
-  socket_.end(`${JSON.stringify({ ok, result, error })}\n`);
+  if (socket_.destroyed || !socket_.writable) return;
+  try {
+    socket_.end(`${JSON.stringify({ ok, result, error })}\n`);
+  } catch (replyError) {
+    const code = (replyError as NodeJS.ErrnoException).code;
+    if (code !== 'EPIPE' && code !== 'ECONNRESET') {
+      console.error(`Supervisor IPC reply error: ${code ?? 'unknown'}`);
+    }
+  }
 }
 function active(status: Operation['status']) {
   return [

@@ -36,7 +36,9 @@ const [socket, controlSecret] = process.argv.slice(1);
 const client = net.createConnection(socket);
 let reply = '';
 const timeout = setTimeout(() => { client.destroy(); process.exitCode = 1; }, 5000);
-client.on('connect', () => client.end(JSON.stringify({ method: 'stop', controlSecret }) + '\n'));
+// Keep the read side open until the Supervisor replies. This is required for
+// Windows named pipes, where end() may race and close the reply channel.
+client.on('connect', () => client.write(JSON.stringify({ method: 'stop', controlSecret }) + '\n'));
 client.on('data', (chunk) => reply += chunk);
 client.on('close', () => { clearTimeout(timeout); try { const value = JSON.parse(reply); if (!value.ok) process.exitCode = 1; } catch { process.exitCode = 1; } });
 client.on('error', () => { clearTimeout(timeout); process.exitCode = 1; });
