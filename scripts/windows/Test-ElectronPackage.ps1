@@ -122,9 +122,14 @@ const argon2 = require(path.join(application, 'node_modules', 'argon2'));
   # reporting, backup, restore, and restart -- not merely native module loading.
   $previousPackagedExecutable = $env:POS_PACKAGED_ELECTRON_EXECUTABLE
   $previousAcceptanceHeadless = $env:POS_ELECTRON_ACCEPTANCE_HEADLESS
+  $previousDisablePrintDialog = $env:POS_ELECTRON_DISABLE_PRINT_DIALOG
   try {
     $env:POS_PACKAGED_ELECTRON_EXECUTABLE = $runtime
     $env:POS_ELECTRON_ACCEPTANCE_HEADLESS = '1'
+    # A hosted CI runner has no interactive print UI. The acceptance test
+    # verifies the receipt preview and IPC invocation without claiming paper
+    # output; real Windows desktop testing keeps the native dialog enabled.
+    $env:POS_ELECTRON_DISABLE_PRINT_DIALOG = '1'
     node (Join-Path $root 'scripts\electron-linux-acceptance.mjs')
     if ($LASTEXITCODE -ne 0) {
       throw "Packaged Electron production API acceptance failed with exit code $LASTEXITCODE."
@@ -134,6 +139,8 @@ const argon2 = require(path.join(application, 'node_modules', 'argon2'));
     else { $env:POS_PACKAGED_ELECTRON_EXECUTABLE = $previousPackagedExecutable }
     if ($null -eq $previousAcceptanceHeadless) { Remove-Item Env:POS_ELECTRON_ACCEPTANCE_HEADLESS -ErrorAction SilentlyContinue }
     else { $env:POS_ELECTRON_ACCEPTANCE_HEADLESS = $previousAcceptanceHeadless }
+    if ($null -eq $previousDisablePrintDialog) { Remove-Item Env:POS_ELECTRON_DISABLE_PRINT_DIALOG -ErrorAction SilentlyContinue }
+    else { $env:POS_ELECTRON_DISABLE_PRINT_DIALOG = $previousDisablePrintDialog }
   }
 } finally {
   Remove-Item -LiteralPath $portableCheck -Force -Recurse -ErrorAction SilentlyContinue

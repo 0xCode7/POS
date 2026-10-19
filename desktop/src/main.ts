@@ -346,6 +346,14 @@ function setupIpc() {
   });
   ipcMain.handle('receipt:print', async () => {
     if (!mainWindow) return { ok: false, error: 'نافذة التطبيق غير متاحة.' };
+    // CI verifies the receipt preview and print invocation, but a hosted
+    // headless Windows runner cannot interact with the native print dialog.
+    // This flag is set only by the disposable package acceptance test; real
+    // desktop runs always use Electron's native print dialog below.
+    if (process.env.POS_ELECTRON_DISABLE_PRINT_DIALOG === '1') {
+      desktopLog('print_dialog_skipped_for_automation', 'receipt preview');
+      return { ok: true };
+    }
     return new Promise((resolve) =>
       mainWindow?.webContents.print(
         { silent: false, printBackground: true },
