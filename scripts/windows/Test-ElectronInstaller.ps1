@@ -14,6 +14,10 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("restaurant-pos-install
 $installDirectory = Join-Path $testRoot 'installed-app'
 $dataRoot = Join-Path $testRoot 'acceptance-data'
 $preExistingShortcutPaths = @()
+# Windows PowerShell 5.1 treats a UTF-8 script without a BOM as ANSI. Build
+# the Arabic product shortcut name from code points so the CI check remains
+# correct regardless of the script's file encoding.
+$shortcutFileName = (([char[]](0x0645, 0x0637, 0x0639, 0x0645, 0x0020, 0x0623, 0x0641, 0x0646, 0x062F, 0x064A, 0x0646, 0x0627) -join '') + '.lnk')
 $shortcutLocations = @(
   [pscustomobject]@{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
   [pscustomobject]@{ Kind = 'desktop'; Directory = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory) }
@@ -44,7 +48,7 @@ function Get-ShortcutTarget([string] $shortcutPath) {
 function Get-InstalledShortcuts {
   $matches = [System.Collections.Generic.List[object]]::new()
   foreach ($location in $shortcutLocations) {
-    $shortcut = Join-Path $location.Directory 'مطعم أفندينا.lnk'
+    $shortcut = Join-Path $location.Directory $shortcutFileName
     if (-not (Test-Path -LiteralPath $shortcut)) { continue }
     # A .lnk can deliberately have no readable TargetPath through WScript on a
     # hosted desktop. Its filesystem presence is the discovery contract here;
