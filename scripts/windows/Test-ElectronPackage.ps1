@@ -34,13 +34,73 @@ try {
   if (-not (Get-ChildItem -LiteralPath $portableCheck -Filter '*.exe' -File -Recurse | Select-Object -First 1)) {
     throw 'Portable ZIP does not contain an Electron executable.'
   }
-  foreach ($native in @(
-    (Join-Path $electron 'resources\app\node_modules\better-sqlite3\build\Release\better_sqlite3.node'),
-    (Join-Path $electron 'resources\app\node_modules\argon2\prebuilds\win32-x64\argon2.glibc.node')
+
+  $runtime = Join-Path $electron 'RestaurantPOS.exe'
+  if (-not (Test-Path -LiteralPath $runtime)) {
+    throw "Packaged Electron runtime is missing: $runtime"
+  }
+  $app = Join-Path $electron 'resources\app'
+  foreach ($required in @(
+    (Join-Path $app 'dist\server\maintenance\supervisor-cli.js'),
+    (Join-Path $app 'dist\drizzle\0003_cash_settlement.sql'),
+    (Join-Path $app 'dist\icons\icon.ico')
   )) {
-    if (-not (Test-Path -LiteralPath $native)) {
-      throw "Required Windows native module is missing from Electron package: $native"
+    if (-not (Test-Path -LiteralPath $required)) {
+      throw "Required packaged application file is missing: $required"
     }
+  }
+  $icon = [System.IO.File]::ReadAllBytes((Join-Path $app 'dist\icons\icon.ico'))
+  if ($icon.Length -lt 4 -or $icon[0] -ne 0 -or $icon[1] -ne 0 -or $icon[2] -ne 1 -or $icon[3] -ne 0) {
+    throw 'The packaged application icon is not a valid ICO file.'
+  }
+
+  $sqliteCandidates = @(
+    (Join-Path $app 'node_modules\better-sqlite3\build\Release\better_sqlite3.node'),
+    (Join-Path $app 'node_modules\better-sqlite3\prebuilds\win32-x64.node')
+  )
+  $argonCandidates = @(
+    (Join-Path $app 'node_modules\argon2\build\Release\argon2.node'),
+    (Join-Path $app 'node_modules\argon2\prebuilds\win32-x64\argon2.glibc.node')
+  )
+  if (-not ($sqliteCandidates | Where-Object { Test-Path -LiteralPath $_ })) {
+    throw 'No Windows x64 better-sqlite3 native binary was packaged.'
+  }
+  if (-not ($argonCandidates | Where-Object { Test-Path -LiteralPath $_ })) {
+    throw 'No Windows x64 argon2 native binary was packaged.'
+  }
+
+  $probe = Join-Path $portableCheck 'verify-electron-native.cjs'
+  @'
+const path = require('node:path');
+
+const application = process.argv[2];
+const sqlite = require(path.join(application, 'node_modules', 'better-sqlite3'));
+const argon2 = require(path.join(application, 'node_modules', 'argon2'));
+
+(async () => {
+  const database = new sqlite(':memory:');
+  if (database.prepare('SELECT 1 AS value').get().value !== 1)
+    throw new Error('better-sqlite3 query failed');
+  database.close();
+  const hash = await argon2.hash('disposable-electron-verification');
+  if (!(await argon2.verify(hash, 'disposable-electron-verification')))
+    throw new Error('argon2 verification failed');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+'@ | Set-Content -LiteralPath $probe -Encoding utf8
+
+  $previousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
+  try {
+    $env:ELECTRON_RUN_AS_NODE = '1'
+    & $runtime $probe $app
+    if ($LASTEXITCODE -ne 0) {
+      throw "Packaged Electron runtime failed to load Windows native dependencies (exit $LASTEXITCODE)."
+    }
+  } finally {
+    if ($null -eq $previousElectronRunAsNode) { Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue }
+    else { $env:ELECTRON_RUN_AS_NODE = $previousElectronRunAsNode }
   }
 } finally {
   Remove-Item -LiteralPath $portableCheck -Force -Recurse -ErrorAction SilentlyContinue
