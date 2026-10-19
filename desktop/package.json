@@ -72,6 +72,7 @@
     },
     "nsis": {
       "artifactName": "RestaurantPOS-win-${arch}-nsis.${ext}",
+      "include": "build/installer.nsh",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
