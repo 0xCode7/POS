@@ -28,6 +28,8 @@
     "desktop:start": "npm run desktop:build && npm run start --workspace @restaurant-pos/desktop",
     "test:electron:linux": "npm run desktop:build && node scripts/electron-linux-acceptance.mjs",
     "desktop:linux": "npm run desktop:build && npm run package:linux --workspace @restaurant-pos/desktop",
+    "desktop:linux:release": "npm run desktop:linux && node scripts/linux/prepare-release.mjs",
+    "test:electron:linux:package": "node scripts/linux/test-electron-package.mjs",
     "desktop:win": "npm run desktop:build && npm run package:win --workspace @restaurant-pos/desktop",
     "sample-data": "npm run sample-data --workspace server",
     "windows:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Build-Portable.ps1",
@@ -47,6 +49,7 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "png-to-ico": "3.0.2",
+    "pngjs": "7.0.0",
     "prettier": "3.9.0",
     "typescript-eslint": "8.57.1"
   },

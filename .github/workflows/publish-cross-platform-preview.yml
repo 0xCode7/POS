@@ -1,0 +1,77 @@
+name: Publish verified cross-platform Electron preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      windows_artifact_id:
+        description: Verified Windows artifact ID
+        required: true
+      linux_artifact_id:
+        description: Verified Linux artifact ID
+        required: true
+      release_tag:
+        description: New experimental release tag
+        required: true
+        default: v0.2.1-electron-preview
+      release_notes:
+        description: Checked-in Markdown release notes path
+        required: true
+        default: docs/releases/v0.2.1-electron-preview.md
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout release notes
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download and verify release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WINDOWS_ARTIFACT_ID: ${{ inputs.windows_artifact_id }}
+          LINUX_ARTIFACT_ID: ${{ inputs.linux_artifact_id }}
+        run: |
+          for id in "$WINDOWS_ARTIFACT_ID" "$LINUX_ARTIFACT_ID"; do
+            case "$id" in ''|*[!0-9]*) echo 'Artifact IDs must be numeric.' >&2; exit 1 ;; esac
+          done
+          mkdir -p verified/windows verified/linux
+          curl --fail --location --retry 3 --header "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPOSITORY/actions/artifacts/$WINDOWS_ARTIFACT_ID/zip" \
+            --output windows.zip
+          curl --fail --location --retry 3 --header "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPOSITORY/actions/artifacts/$LINUX_ARTIFACT_ID/zip" \
+            --output linux.zip
+          unzip -tq windows.zip && unzip -tq linux.zip
+          unzip -q windows.zip -d verified/windows
+          unzip -q linux.zip -d verified/linux
+          (cd verified/windows && sha256sum --check SHA256SUMS.txt)
+          (cd verified/linux && sha256sum --check SHA256SUMS-Linux.txt)
+
+      - name: Create experimental release and upload verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          test -s "$RELEASE_NOTES"
+          if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --prerelease --notes-file "$RELEASE_NOTES" --repo "$REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" --prerelease --title "مطعم أفندينا ${RELEASE_TAG}" --notes-file "$RELEASE_NOTES" --repo "$REPOSITORY"
+          fi
+          gh release upload "$RELEASE_TAG" \
+            verified/windows/RestaurantPOS-Setup.exe \
+            verified/windows/RestaurantPOS-Portable.zip \
+            verified/windows/SHA256SUMS.txt \
+            verified/linux/RestaurantPOS-Linux-x64.AppImage \
+            verified/linux/RestaurantPOS-Linux-amd64.deb \
+            verified/linux/SHA256SUMS-Linux.txt \
+            --repo "$REPOSITORY"

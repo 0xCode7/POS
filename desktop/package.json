@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "Offline Restaurant POS desktop application",
   "author": "Restaurant POS",
+  "homepage": "https://github.com/0xCode7/POS",
+  "desktopName": "com.efendina.restaurantpos",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -11,7 +13,7 @@
     "rebuild:native": "electron-builder install-app-deps",
     "dev": "cross-env POS_ELECTRON_DEV=1 node scripts/launch.mjs",
     "start": "node scripts/launch.mjs",
-    "package:linux": "npm run rebuild:native && electron-builder --linux AppImage --x64 --publish never",
+    "package:linux": "npm run rebuild:native && electron-builder --x64 --publish never",
     "package:win": "npm run rebuild:native && electron-builder --win nsis portable --x64 --publish never",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
@@ -44,10 +46,22 @@
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "category": "Office",
-      "icon": "build/icons"
+      "syncDesktopName": true,
+      "icon": "build/icons",
+      "maintainer": "Efendina Restaurant",
+      "synopsis": "Offline single-restaurant point of sale",
+      "description": "Offline Arabic-first Restaurant POS for one local counter/takeaway restaurant."
+    },
+    "appImage": {
+      "artifactName": "RestaurantPOS-Linux-x64.${ext}"
+    },
+    "deb": {
+      "packageName": "restaurant-pos",
+      "artifactName": "RestaurantPOS-Linux-amd64.${ext}"
     },
     "win": {
       "target": [

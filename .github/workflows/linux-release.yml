@@ -1,0 +1,55 @@
+name: Linux release verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configure Node.js 24.13.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Run source checks
+        run: npm run check
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Chromium workflow
+        run: npm run test:e2e
+
+      - name: Run Electron Linux acceptance
+        run: xvfb-run -a npm run test:electron:linux
+
+      - name: Build Linux AppImage and DEB
+        run: npm run desktop:linux:release
+
+      - name: Verify Linux package files
+        run: xvfb-run -a npm run test:electron:linux:package
+
+      - name: Publish checksum-verified Linux artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: RestaurantPOS-Linux-x64-Experimental
+          path: |
+            release/linux/RestaurantPOS-Linux-x64.AppImage
+            release/linux/RestaurantPOS-Linux-amd64.deb
+            release/linux/SHA256SUMS-Linux.txt
+          if-no-files-found: error
+          retention-days: 14
