@@ -37,6 +37,7 @@ let desktop;
 let page;
 const consoleErrors = [];
 const failedLocalRequests = [];
+const apiTraffic = [];
 
 function run(command, arguments_) {
   return new Promise((resolve, reject) => {
@@ -146,6 +147,13 @@ async function launch() {
   page.on('requestfailed', (request) => {
     if (new URL(request.url()).hostname === '127.0.0.1')
       failedLocalRequests.push(`${request.method()} ${request.url()}`);
+  });
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (url.hostname === '127.0.0.1' && url.pathname.startsWith('/api/'))
+      apiTraffic.push(
+        `${response.request().method()} ${url.pathname} status=${response.status()}`,
+      );
   });
   await waitForHealth();
 }
@@ -278,6 +286,25 @@ try {
   );
   console.log(
     `Electron Linux acceptance passed with isolated data at ${dataRoot}.`,
+  );
+} catch (error) {
+  const logDirectory = path.join(dataRoot, 'user-data', 'logs');
+  const diagnostics = ['desktop.log', 'application.log']
+    .map((name) => {
+      try {
+        return `${name}:\n${fs.readFileSync(path.join(logDirectory, name), 'utf8')}`;
+      } catch {
+        return `${name}: unavailable`;
+      }
+    })
+    .join('\n');
+  throw new Error(
+    `${error instanceof Error ? error.message : String(error)}\n` +
+      `API traffic:\n${apiTraffic.join('\n') || 'none'}\n` +
+      `Failed local requests:\n${failedLocalRequests.join('\n') || 'none'}\n` +
+      `Renderer errors:\n${consoleErrors.join('\n') || 'none'}\n` +
+      `Diagnostics:\n${diagnostics}`,
+    { cause: error },
   );
 } finally {
   await close().catch(() => undefined);
