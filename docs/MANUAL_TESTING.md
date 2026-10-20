@@ -85,7 +85,7 @@ Record pass/fail and notes for every item.
 
 ### Backup and restart
 
-- [ ] Create a manual backup from the admin report screen; confirm status/history shows a successful verified file under `$POS_BACKUP_DIR`.
+- [ ] Open **النسخ الاحتياطية** after startup; confirm status/history shows a successful verified automatic file under `$POS_BACKUP_DIR`. Confirm folder choice, manual path entry, folder opening, and manual-create controls are absent.
 - [ ] Keep an open order, stop the app cleanly with `Ctrl+C`, restart with the same exported paths, and verify users, menu, open order, paid sales, receipts, and backup history persist.
 - [ ] Confirm files exist only inside the printed temporary data/backup paths. Do not exercise restore against a running service; follow `BACKUP_RECOVERY.md` for a separate offline restore rehearsal.
 - [ ] Confirm logout removes access to authenticated pages and browser Back does not reveal usable protected data.

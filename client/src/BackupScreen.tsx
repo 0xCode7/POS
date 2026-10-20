@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, errorMessage, type Page } from './api';
-import { useSiteDialog } from './SiteDialog';
 import { Notice } from './Notice';
 
 type BackupRecord = {
@@ -56,11 +55,8 @@ export function BackupScreen({
   const [history, setHistory] = useState<Page<BackupRecord>>();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const { ask, dialog } = useSiteDialog();
 
   const fail = useCallback(
     (cause: unknown) => {
@@ -96,40 +92,6 @@ export function BackupScreen({
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const createBackup = async () => {
-    if (busy || !status) return;
-    const result = await ask({
-      title: 'إنشاء نسخة احتياطية يدوية',
-      message: `سيتم إنشاء نسخة متسقة والتحقق منها قبل إظهار النجاح. موقع الحفظ الحالي: ${status.directory}`,
-      confirmLabel: 'إنشاء النسخة',
-      cancelLabel: 'إلغاء',
-      fields: [
-        {
-          name: 'friendlyName',
-          label: 'اسم النسخة (اختياري)',
-          type: 'text',
-          maxLength: 80,
-        },
-      ],
-    });
-    if (!result) return;
-    setBusy(true);
-    setError('');
-    try {
-      await api('/api/admin/backups', {
-        method: 'POST',
-        body: JSON.stringify({ friendlyName: result.friendlyName }),
-      });
-      setNotice('تم إنشاء النسخة والتحقق من سلامتها بنجاح.');
-      setPage(1);
-      await load();
-    } catch (cause) {
-      fail(cause);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (loading && !status)
     return <div className="empty-state">جارٍ تحميل حالة النسخ…</div>;
 
@@ -139,24 +101,11 @@ export function BackupScreen({
         <div>
           <p className="eyebrow">حماية بيانات المطعم</p>
           <h1>النسخ الاحتياطية</h1>
-          <p>أنشئ نسخًا آمنة وراجع سلامتها وموقع حفظها.</p>
+          <p>تُنشأ نسخ آمنة تلقائيًا، ويمكنك مراجعة سلامتها وموقع حفظها.</p>
         </div>
-        <button
-          disabled={busy || status?.running}
-          onClick={() => void createBackup()}
-        >
-          {busy || status?.running ? 'جارٍ تنفيذ العملية…' : 'إنشاء نسخة الآن'}
-        </button>
       </div>
       {error && (
         <Notice message={error} tone="error" onDismiss={() => setError('')} />
-      )}
-      {notice && (
-        <Notice
-          message={notice}
-          tone="success"
-          onDismiss={() => setNotice('')}
-        />
       )}
 
       {status && (
@@ -172,7 +121,11 @@ export function BackupScreen({
             />
             <StatusCard
               label="النسخ التلقائي"
-              value={status.automaticEnabled ? 'يعمل يوميًا' : 'غير مشغّل الآن'}
+              value={
+                status.automaticEnabled
+                  ? 'يُراجع يوميًا وعند بدء التطبيق'
+                  : 'غير مشغّل الآن'
+              }
               tone={status.automaticEnabled ? 'success' : 'warning'}
             />
             <StatusCard
@@ -217,7 +170,7 @@ export function BackupScreen({
 
           {status.lastError && (
             <p className="form-error">
-              آخر خطأ في النسخ: {status.lastError.message}
+              فشل آخر نسخ تلقائي: {status.lastError.message}
             </p>
           )}
           <section className="backup-info-message">
@@ -338,7 +291,6 @@ export function BackupScreen({
           </section>
         </>
       )}
-      {dialog}
     </section>
   );
 }

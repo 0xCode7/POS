@@ -190,15 +190,11 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
     page.getByRole('button', { name: 'إدخال مسار يدوي' }),
   ).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'فتح المجلد' })).toHaveCount(0);
-  await expect(page.getByText(/هذا المسار للعرض فقط/)).toBeVisible();
-  await page.getByRole('button', { name: 'إنشاء نسخة الآن' }).click();
   await expect(
-    page.getByRole('heading', { name: 'إنشاء نسخة احتياطية يدوية' }),
-  ).toBeVisible();
-  await page.getByLabel('اسم النسخة (اختياري)').fill('نسخة اختبار');
-  await page.getByRole('button', { name: 'إنشاء النسخة' }).click();
-  await expect(page.locator('.backup-table tbody tr')).toHaveCount(2);
-  await expect(page.locator('.backup-table')).toContainText('نسخة اختبار');
+    page.getByRole('button', { name: 'إنشاء نسخة الآن' }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/هذا المسار للعرض فقط/)).toBeVisible();
+  await expect(page.getByText('تُنشأ نسخ آمنة تلقائيًا')).toBeVisible();
   await expect(
     page.getByText('الاستعادة من الواجهة متوقفة مؤقتًا'),
   ).toBeVisible();

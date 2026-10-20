@@ -55,6 +55,29 @@ let page;
 const consoleErrors = [];
 const failedLocalRequests = [];
 const apiTraffic = [];
+let pendingLocalRequests = 0;
+
+function isLocalApiRequest(request) {
+  const url = new URL(request.url());
+  return url.hostname === '127.0.0.1' && url.pathname.startsWith('/api/');
+}
+
+async function waitForRendererIdle() {
+  const deadline = Date.now() + 5_000;
+  let idleSince = 0;
+  while (Date.now() < deadline) {
+    if (pendingLocalRequests === 0) {
+      if (!idleSince) idleSince = Date.now();
+      if (Date.now() - idleSince >= 250) return;
+    } else {
+      idleSince = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    `Renderer still had ${pendingLocalRequests} local API request(s) before shutdown.`,
+  );
+}
 
 function requestHealth() {
   return new Promise((resolve, reject) => {
@@ -132,8 +155,17 @@ async function launch() {
     }
   });
   page.on('requestfailed', (request) => {
-    if (new URL(request.url()).hostname === '127.0.0.1')
+    if (isLocalApiRequest(request)) {
+      pendingLocalRequests = Math.max(0, pendingLocalRequests - 1);
       failedLocalRequests.push(`${request.method()} ${request.url()}`);
+    }
+  });
+  page.on('request', (request) => {
+    if (isLocalApiRequest(request)) pendingLocalRequests += 1;
+  });
+  page.on('requestfinished', (request) => {
+    if (isLocalApiRequest(request))
+      pendingLocalRequests = Math.max(0, pendingLocalRequests - 1);
   });
   page.on('response', (response) => {
     const url = new URL(response.url());
@@ -147,8 +179,10 @@ async function launch() {
 
 async function close() {
   if (!desktop) return;
+  if (page && !page.isClosed()) await waitForRendererIdle();
   await desktop.close();
   desktop = undefined;
+  page = undefined;
   await waitForStoppedHealth();
 }
 
@@ -265,18 +299,17 @@ try {
       0,
       'Unsupported backup folder opening must not be shown.',
     );
-    await page.getByRole('button', { name: 'إنشاء نسخة الآن' }).click();
-    await page.getByLabel('اسم النسخة (اختياري)').fill('نسخة إلكترون عربية');
-    await page.getByRole('button', { name: 'إنشاء النسخة' }).click();
-    await page
-      .locator('.backup-table')
-      .getByText('نسخة إلكترون عربية')
-      .waitFor();
-    await page.getByRole('button', { name: 'إغلاق الإشعار' }).click();
     assert.equal(
-      await page.locator('.page-toast:visible').count(),
+      await page.getByRole('button', { name: 'إنشاء نسخة الآن' }).count(),
       0,
-      'A notice must be dismissible.',
+      'Manual backup creation must not be shown.',
+    );
+    await page.getByText('تُنشأ نسخ آمنة تلقائيًا').waitFor();
+    await page.locator('.backup-table tbody tr').first().waitFor();
+    assert.match(
+      await page.locator('.backup-table tbody tr').first().textContent(),
+      /تلقائية/,
+      'A verified automatic backup must appear after application startup.',
     );
     assert.ok(
       (await page.locator('.page-toast:visible').count()) <= 3,

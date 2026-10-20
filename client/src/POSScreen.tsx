@@ -19,7 +19,11 @@ const egp = new Intl.NumberFormat('ar-EG', {
 });
 const operationKey = () => crypto.randomUUID();
 
-export function configureReceiptPrintPage() {
+export async function configureReceiptPrintPage() {
+  if (document.fonts?.ready) await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
   const receipts = [
     ...document.querySelectorAll<HTMLElement>('.thermal-receipt'),
   ];
@@ -61,7 +65,10 @@ export function POSScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [noticeTone, setNoticeTone] = useState<'success' | 'info'>('success');
+  const [printing, setPrinting] = useState(false);
   const automaticPrintReceiptId = useRef('');
+  const printingReceiptId = useRef('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { ask, dialog } = useSiteDialog();
   const fail = useCallback(
@@ -135,6 +142,7 @@ export function POSScreen({
       setOrder(value);
       setReceipt(undefined);
       setCash('');
+      setNoticeTone('success');
       setNotice(`تم إنشاء الطلب ${value.orderNumber}.`);
       await loadOrders();
     } catch (cause) {
@@ -163,6 +171,7 @@ export function POSScreen({
         })
       ).order;
       setOrder(value);
+      setNoticeTone('success');
       setNotice(`تمت إضافة ${item.name}.`);
       await loadOrders();
     } catch (cause) {
@@ -361,6 +370,7 @@ export function POSScreen({
       automaticPrintReceiptId.current = paid.id;
       setReceipt(paid);
       setOrder({ ...order, status: 'PAID', version: order.version + 1 });
+      setNoticeTone('success');
       setNotice(
         `تم الدفع. الباقي ${egp.format(paid.snapshot.changeMinor / 100)}.`,
       );
@@ -373,14 +383,25 @@ export function POSScreen({
     }
   };
   const printReceipt = useCallback(async (target: Receipt) => {
+    if (printingReceiptId.current === target.id) return;
+    printingReceiptId.current = target.id;
+    setPrinting(true);
+    setNoticeTone('info');
+    setNotice('جارٍ تجهيز الإيصال للطباعة…');
+    setError('');
     try {
-      configureReceiptPrintPage();
-      await openReceiptPrintDialog();
+      await configureReceiptPrintPage();
+      const result = await openReceiptPrintDialog();
       await api(`/api/receipts/${target.id}/print-attempts`, {
         method: 'POST',
         body: JSON.stringify({ outcome: 'DIALOG_OPENED' }),
       });
-      setNotice('تم فتح نافذة الطباعة؛ لا يؤكد ذلك خروج إيصال فعلي.');
+      setNoticeTone('success');
+      setNotice(
+        result === 'submitted'
+          ? 'تم إرسال الإيصال للطباعة بنجاح.'
+          : 'تم فتح نافذة الطباعة. أكمل الإرسال من النافذة.',
+      );
     } catch (cause) {
       const detail = errorMessage(cause);
       setError(`تعذر فتح الطباعة: ${detail}`);
@@ -392,6 +413,9 @@ export function POSScreen({
       } catch {
         /* payment remains final even if logging fails */
       }
+    } finally {
+      printingReceiptId.current = '';
+      setPrinting(false);
     }
   }, []);
   useEffect(() => {
@@ -439,7 +463,7 @@ export function POSScreen({
       {notice && (
         <Notice
           message={notice}
-          tone="success"
+          tone={noticeTone}
           onDismiss={() => setNotice('')}
         />
       )}
@@ -524,12 +548,13 @@ export function POSScreen({
                     <option value="58">58 مم</option>
                   </select>
                 </label>
-                <button onClick={() => void printReceipt(receipt)}>
-                  طباعة / إعادة طباعة
+                <button
+                  disabled={printing}
+                  onClick={() => void printReceipt(receipt)}
+                >
+                  {printing ? 'جارٍ تجهيز الإيصال…' : 'طباعة / إعادة طباعة'}
                 </button>
-                <small>
-                  ستفتح نافذة طباعة المتصفح. الطباعة الفعلية غير مؤكدة.
-                </small>
+                <small>إرسال الطباعة لا يؤكد خروج ورقة فعلية من الطابعة.</small>
               </div>
             </div>
           ) : (

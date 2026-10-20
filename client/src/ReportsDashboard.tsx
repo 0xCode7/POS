@@ -1,4 +1,10 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { api, ApiError, errorMessage, type Page, type Receipt } from './api';
 import { openReceiptPrintDialog } from './desktop';
 import { configureReceiptPrintPage, ReceiptView } from './POSScreen';
@@ -80,6 +86,9 @@ export function ReportsDashboard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [printError, setPrintError] = useState('');
+  const [printStatus, setPrintStatus] = useState('');
+  const [printing, setPrinting] = useState(false);
+  const printingReceiptId = useRef('');
 
   const fail = useCallback(
     (cause: unknown) => {
@@ -173,17 +182,27 @@ export function ReportsDashboard({
   };
   const print = async () => {
     if (!receipt) return;
+    if (printingReceiptId.current === receipt.id) return;
+    printingReceiptId.current = receipt.id;
+    setPrinting(true);
+    setPrintError('');
+    setPrintStatus('جارٍ تجهيز الإيصال للطباعة…');
     try {
-      configureReceiptPrintPage();
-      await openReceiptPrintDialog();
+      await configureReceiptPrintPage();
+      const result = await openReceiptPrintDialog();
       await api(`/api/receipts/${receipt.id}/print-attempts`, {
         method: 'POST',
         body: JSON.stringify({ outcome: 'DIALOG_OPENED' }),
       });
-      setPrintError('');
+      setPrintStatus(
+        result === 'submitted'
+          ? 'تم إرسال الإيصال للطباعة بنجاح.'
+          : 'تم فتح نافذة الطباعة. أكمل الإرسال من النافذة.',
+      );
     } catch (cause) {
       const text = errorMessage(cause);
       setPrintError(text);
+      setPrintStatus('');
       try {
         await api(`/api/receipts/${receipt.id}/print-attempts`, {
           method: 'POST',
@@ -192,6 +211,9 @@ export function ReportsDashboard({
       } catch {
         // The visible error is retained even if logging the attempt also fails.
       }
+    } finally {
+      printingReceiptId.current = '';
+      setPrinting(false);
     }
   };
   const maxDaily = Math.max(1, ...days.map((day) => day.revenueMinor));
@@ -396,7 +418,12 @@ export function ReportsDashboard({
                   <ReceiptView receipt={receipt} />
                   <div className="receipt-actions no-print">
                     {printError && <p className="form-error">{printError}</p>}
-                    <button onClick={() => void print()}>إعادة طباعة</button>
+                    {printStatus && (
+                      <p className="success-message">{printStatus}</p>
+                    )}
+                    <button disabled={printing} onClick={() => void print()}>
+                      {printing ? 'جارٍ تجهيز الإيصال…' : 'إعادة طباعة'}
+                    </button>
                     <button
                       className="secondary"
                       autoFocus
@@ -404,7 +431,7 @@ export function ReportsDashboard({
                     >
                       إغلاق
                     </button>
-                    <small>فتح نافذة الطباعة لا يؤكد خروج ورقة فعلية.</small>
+                    <small>إرسال الطباعة لا يؤكد خروج ورقة فعلية.</small>
                   </div>
                 </div>
               </div>

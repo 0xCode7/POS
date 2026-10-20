@@ -445,6 +445,7 @@ h3 {
 }
 .form-error,
 .success-message,
+.info-message,
 .backup-warning {
   padding: 11px 13px;
   border: 1px solid #ecc7c2;
@@ -464,6 +465,11 @@ h3 {
   border-color: #c8e7d6;
   color: #126644;
   background: #eaf6ef;
+}
+.info-message {
+  border-color: #b9d4e4;
+  color: #245b78;
+  background: #eef7fb;
 }
 .page-toast {
   position: fixed;
@@ -1889,7 +1895,7 @@ h3 {
 /* Printing remains independent from the screen theme. */
 @media print {
   @page {
-    size: 80mm 200mm;
+    size: 80mm auto;
     margin: 0;
   }
   html,
@@ -1914,7 +1920,7 @@ h3 {
     visibility: visible !important;
   }
   .thermal-receipt {
-    position: fixed;
+    position: absolute;
     top: 0;
     right: 0;
     width: var(--receipt-width);
@@ -1922,7 +1928,7 @@ h3 {
     min-height: 0;
     margin: 0;
     padding: 3mm;
-    break-inside: avoid;
+    break-inside: avoid-page;
     box-shadow: none;
   }
   .no-print {

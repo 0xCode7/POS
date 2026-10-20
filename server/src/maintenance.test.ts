@@ -69,6 +69,19 @@ describe('backup, restore, and reliability', () => {
     );
   });
 
+  it('runs a missed automatic daily backup when the service starts', async () => {
+    const backups = configuredBackups();
+    expect(backups.history()).toHaveLength(0);
+    backups.startAutomatic();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    backups.stopAutomatic();
+    expect(backups.history()).toHaveLength(1);
+    expect(backups.history()[0]).toMatchObject({
+      kind: 'daily',
+      validation: 'valid',
+    });
+  });
+
   it('protects backup APIs with admin authentication and CSRF', async () => {
     process.env.POS_BACKUP_DIR = backupDirectory;
     const app = createApp({ database, disableRateLimit: true });
@@ -79,17 +92,26 @@ describe('backup, restore, and reliability', () => {
       .send({ username: admin.username, password: admin.password });
     await adminAgent.get('/api/admin/backups').expect(200);
     await request(app).get('/api/admin/backups/history').expect(401);
-    await request(app).post('/api/admin/backups/pick-directory').expect(401);
-    await adminAgent.post('/api/admin/backups').expect(403);
-    const created = await adminAgent
+    // Automatic backups are intentionally the only HTTP-visible creation path.
+    // Obsolete manual/folder endpoints remain absent rather than exposing a
+    // stale Electron socket bridge.
+    const unavailableManual = await adminAgent
       .post('/api/admin/backups')
       .set(csrf)
-      .expect(201);
-    expect(created.body.backup.filename).toMatch(/^restaurant-pos-/);
-    expect(created.headers['content-security-policy']).toContain(
+      .expect(404);
+    await adminAgent
+      .post('/api/admin/backups/pick-directory')
+      .set(csrf)
+      .expect(404);
+    await adminAgent
+      .patch('/api/admin/backups/settings')
+      .set(csrf)
+      .send({ directory: backupDirectory })
+      .expect(404);
+    expect(unavailableManual.headers['content-security-policy']).toContain(
       "default-src 'self'",
     );
-    expect(created.headers['x-content-type-options']).toBe('nosniff');
+    expect(unavailableManual.headers['x-content-type-options']).toBe('nosniff');
     await adminAgent
       .post('/api/admin/users')
       .set(csrf)
@@ -107,11 +129,6 @@ describe('backup, restore, and reliability', () => {
       .send({ username: 'backup-cashier', password: 'cashier password' })
       .expect(200);
     await cashier.get('/api/admin/backups/history').expect(403);
-    await cashier
-      .patch('/api/admin/backups/settings')
-      .set(csrf)
-      .send({ directory: path.join(directory, 'cashier-attempt') })
-      .expect(403);
     await cashier
       .post('/api/admin/backups/pick-directory')
       .set(csrf)
@@ -150,23 +167,6 @@ describe('backup, restore, and reliability', () => {
         path.join(backupDirectory, `${arabic.filename}.metadata.json`),
       ),
     ).toBe(true);
-    service.changeDirectory(backupDirectory);
-    expect(new BackupService(database).inspect(arabic.filename)).toMatchObject({
-      friendlyName: 'نسخة نهاية اليوم',
-      hasCustomName: true,
-    });
-
-    const copiedDirectory = path.join(directory, 'copied-backups');
-    fs.mkdirSync(copiedDirectory);
-    fs.copyFileSync(
-      path.join(backupDirectory, arabic.filename),
-      path.join(copiedDirectory, arabic.filename),
-    );
-    fs.copyFileSync(
-      path.join(backupDirectory, `${arabic.filename}.metadata.json`),
-      path.join(copiedDirectory, `${arabic.filename}.metadata.json`),
-    );
-    service.changeDirectory(copiedDirectory);
     expect(service.inspect(arabic.filename)).toMatchObject({
       friendlyName: 'نسخة نهاية اليوم',
       hasCustomName: true,
@@ -179,40 +179,25 @@ describe('backup, restore, and reliability', () => {
     ).rejects.toThrow('محجوز');
   });
 
-  it('changes the backup directory safely and persists it across service restart', async () => {
-    const service = new BackupService(database);
-    const app = createApp({
-      database,
-      backupService: service,
-      disableRateLimit: true,
-    });
-    const agent = request.agent(app);
-    await agent
-      .post('/api/auth/login')
-      .set(csrf)
-      .send({ username: admin.username, password: admin.password })
-      .expect(200);
+  it('uses a previously saved backup destination without changing it from the UI', async () => {
     const selected = path.join(directory, 'selected-backups');
-    const changed = await agent
-      .patch('/api/admin/backups/settings')
-      .set(csrf)
-      .send({ directory: selected })
-      .expect(200);
-    expect(changed.body.backups).toMatchObject({
+    fs.mkdirSync(selected);
+    fs.writeFileSync(
+      path.join(directory, 'data', 'backup-settings.json'),
+      JSON.stringify({
+        directory: selected,
+        previousDirectories: [path.join(directory, 'data', 'backups')],
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const service = new BackupService(database);
+    expect(service.status()).toMatchObject({
       directory: selected,
       directorySource: 'saved',
-      environmentManaged: false,
     });
-    expect(changed.body.backups.previousDirectories).toContain(
-      path.join(directory, 'data', 'backups'),
-    );
-    const created = await agent
-      .post('/api/admin/backups')
-      .set(csrf)
-      .expect(201);
-    expect(
-      fs.existsSync(path.join(selected, created.body.backup.filename)),
-    ).toBe(true);
+    const created = await service.runDailyIfDue();
+    expect(created).toBeDefined();
+    expect(fs.existsSync(path.join(selected, created!.filename))).toBe(true);
     expect(new BackupService(database).directory).toBe(selected);
     expect(
       JSON.parse(
@@ -224,69 +209,11 @@ describe('backup, restore, and reliability', () => {
     ).toMatchObject({ directory: selected });
   });
 
-  it('rejects unsafe, unwritable or non-directory, and environment-managed backup directory changes', async () => {
-    const service = new BackupService(database);
-    const app = createApp({
-      database,
-      backupService: service,
-      disableRateLimit: true,
-    });
-    const agent = request.agent(app);
-    await agent
-      .post('/api/auth/login')
-      .set(csrf)
-      .send({ username: admin.username, password: admin.password })
-      .expect(200);
-    await agent
-      .patch('/api/admin/backups/settings')
-      .set(csrf)
-      .send({ directory: 'relative/backups' })
-      .expect(400);
-    await agent
-      .patch('/api/admin/backups/settings')
-      .set(csrf)
-      .send({ directory: path.join(directory, 'data') })
-      .expect(400);
-    await agent
-      .patch('/api/admin/backups/settings')
-      .set(csrf)
-      .send({ directory: process.cwd() })
-      .expect(400);
-    const readOnly = path.join(directory, 'read-only');
-    fs.mkdirSync(readOnly, { mode: 0o500 });
-    if (process.platform === 'win32') {
-      // Windows does not enforce POSIX directory modes such as 0500. Use an
-      // existing file instead, which reliably cannot become a backup folder.
-      const nonDirectory = path.join(directory, 'not-a-directory');
-      fs.writeFileSync(nonDirectory, 'not a directory');
-      await agent
-        .patch('/api/admin/backups/settings')
-        .set(csrf)
-        .send({ directory: nonDirectory })
-        .expect(400);
-    } else {
-      await agent
-        .patch('/api/admin/backups/settings')
-        .set(csrf)
-        .send({ directory: readOnly })
-        .expect(400);
-    }
-
-    process.env.POS_BACKUP_DIR = backupDirectory;
-    const managed = new BackupService(database);
-    const managedAgent = request.agent(
-      createApp({ database, backupService: managed, disableRateLimit: true }),
-    );
-    await managedAgent
-      .post('/api/auth/login')
-      .set(csrf)
-      .send({ username: admin.username, password: admin.password })
-      .expect(200);
-    await managedAgent
-      .patch('/api/admin/backups/settings')
-      .set(csrf)
-      .send({ directory: path.join(directory, 'other') })
-      .expect(400);
+  it('rejects unsafe configured backup paths at startup', () => {
+    process.env.POS_BACKUP_DIR = 'relative/backups';
+    expect(() => new BackupService(database)).toThrow('مسارًا مطلقًا');
+    process.env.POS_BACKUP_DIR = path.join(directory, 'data');
+    expect(() => new BackupService(database)).toThrow('مجلد قاعدة البيانات');
     delete process.env.POS_BACKUP_DIR;
   });
 

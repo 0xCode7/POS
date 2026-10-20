@@ -57,7 +57,7 @@ $flow = Join-Path $test 'portable-flow.mjs'
 
 @'
 import fs from 'node:fs';
-const [base, backupDirectory, stateFile, phase] = process.argv.slice(2);
+const [base, stateFile, phase] = process.argv.slice(2);
 const username = process.env.POS_PORTABLE_TEST_USERNAME;
 const password = process.env.POS_PORTABLE_TEST_PASSWORD;
 let cookie = '';
@@ -87,16 +87,24 @@ if (phase === 'seed') {
   const order = (await request('/api/orders', { method: 'POST', headers: { 'idempotency-key': 'portable-order-key-001' } })).body.order;
   const updated = (await request(`/api/orders/${order.id}/items`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'portable-item-key-001' }, body: JSON.stringify({ menuItemId: item.id, quantity: 2, expectedVersion: order.version }) })).body.order;
   const receipt = (await request(`/api/orders/${order.id}/checkout`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'portable-checkout-key-001' }, body: JSON.stringify({ cashTenderedMinor: 30000, expectedVersion: updated.version }) })).body.receipt;
-  await request('/api/admin/backups/settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ directory: backupDirectory }) });
-  const created = (await request('/api/admin/backups', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ friendlyName: 'Portable verification backup' }) }, [201])).body.backup;
-  if (created.validation !== 'valid' || !created.restoreEligible) throw new Error('manual backup is not valid and restore-eligible');
-  fs.writeFileSync(stateFile, JSON.stringify({ filename: created.filename, receiptId: receipt.id, backupDirectory }));
-  console.log('Seed, payment, receipt, and manual backup: OK');
+  let status;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    status = (await request('/api/admin/backups')).body.backups;
+    const automatic = status.history.find((backup) => backup.kind === 'daily' && backup.validation === 'valid' && backup.restoreEligible);
+    if (automatic) {
+      fs.writeFileSync(stateFile, JSON.stringify({ filename: automatic.filename, receiptId: receipt.id, backupDirectory: status.directory }));
+      console.log('Seed, payment, receipt, and verified automatic backup: OK');
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (!fs.existsSync(stateFile)) throw new Error('automatic backup was not created after application startup');
 } else if (phase === 'restore') {
   await login();
   const status = (await request('/api/admin/backups')).body.backups;
-  if (status.directory !== backupDirectory) throw new Error('backup directory did not persist after restart');
   const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  if (status.directory !== state.backupDirectory) throw new Error('backup directory did not persist after restart');
   const oldCookie = cookie;
   await request(`/api/admin/backups/${encodeURIComponent(state.filename)}/restore-request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password, confirmation: `استعادة ${state.filename}` }) }, [202]);
   const until = Date.now() + 45000;
@@ -120,17 +128,17 @@ $serverMayBeRunning = $false
 try {
   & $start -DataDirectory $data -Port $Port -NoBrowser
   $serverMayBeRunning = $true
-  Invoke-Node $node $flow @("http://127.0.0.1:$Port", $backups, (Join-Path $test 'state.json'), 'seed') @{ POS_PORTABLE_TEST_USERNAME = $username; POS_PORTABLE_TEST_PASSWORD = $password }
+  Invoke-Node $node $flow @("http://127.0.0.1:$Port", (Join-Path $test 'state.json'), 'seed') @{ POS_PORTABLE_TEST_USERNAME = $username; POS_PORTABLE_TEST_PASSWORD = $password }
   & $stop -DataDirectory $data
   $serverMayBeRunning = $false
   & $start -DataDirectory $data -Port $Port -NoBrowser
   $serverMayBeRunning = $true
-  Invoke-Node $node $flow @("http://127.0.0.1:$Port", $backups, (Join-Path $test 'state.json'), 'restore') @{ POS_PORTABLE_TEST_USERNAME = $username; POS_PORTABLE_TEST_PASSWORD = $password }
+  Invoke-Node $node $flow @("http://127.0.0.1:$Port", (Join-Path $test 'state.json'), 'restore') @{ POS_PORTABLE_TEST_USERNAME = $username; POS_PORTABLE_TEST_PASSWORD = $password }
   & $stop -DataDirectory $data
   $serverMayBeRunning = $false
   Write-Host "Automated portable checks passed. Isolated test directory: $test"
   if ($InteractiveDesktopChecks) {
-    Write-Host 'Interactive checks still required: start the app, sign in with a disposable admin, use Choose Folder and Open Backup Folder, then visually confirm the real Windows dialogs. Disconnect the Windows host from external networks and repeat startup, login, checkout, backup, restore, and reporting. This script does not claim those GUI/offline-network checks passed.'
+    Write-Host 'Interactive checks still required: start the app, sign in with a disposable admin, confirm the read-only backup location and automatic history, then visually confirm checkout, receipt, restore, and reporting. Disconnect the Windows host from external networks and repeat startup. This script does not claim those GUI/offline-network checks passed.'
   }
 } finally {
   Remove-Item Env:POS_PORTABLE_TEST_USERNAME -ErrorAction SilentlyContinue

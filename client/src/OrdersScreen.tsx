@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   api,
   ApiError,
@@ -43,6 +43,9 @@ export function OrdersScreen({
   const [selected, setSelected] = useState<AdminOrder>();
   const [receipt, setReceipt] = useState<Receipt>();
   const [printError, setPrintError] = useState('');
+  const [printStatus, setPrintStatus] = useState('');
+  const [printing, setPrinting] = useState(false);
+  const printingReceiptId = useRef('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -107,14 +110,23 @@ export function OrdersScreen({
 
   const print = async () => {
     if (!receipt) return;
+    if (printingReceiptId.current === receipt.id) return;
+    printingReceiptId.current = receipt.id;
+    setPrinting(true);
+    setPrintError('');
+    setPrintStatus('جارٍ تجهيز الإيصال للطباعة…');
     try {
-      configureReceiptPrintPage();
-      await openReceiptPrintDialog();
+      await configureReceiptPrintPage();
+      const result = await openReceiptPrintDialog();
       await api(`/api/receipts/${receipt.id}/print-attempts`, {
         method: 'POST',
         body: JSON.stringify({ outcome: 'DIALOG_OPENED' }),
       });
-      setPrintError('');
+      setPrintStatus(
+        result === 'submitted'
+          ? 'تم إرسال الإيصال للطباعة بنجاح.'
+          : 'تم فتح نافذة الطباعة. أكمل الإرسال من النافذة.',
+      );
     } catch (cause) {
       const detail = errorMessage(cause);
       setPrintError(`تعذرت الطباعة: ${detail}`);
@@ -126,6 +138,9 @@ export function OrdersScreen({
       } catch {
         // The payment remains final even when attempt logging fails.
       }
+    } finally {
+      printingReceiptId.current = '';
+      setPrinting(false);
     }
   };
 
@@ -312,7 +327,10 @@ export function OrdersScreen({
             <ReceiptView receipt={receipt} />
             <div className="receipt-actions no-print">
               {printError && <p className="form-error">{printError}</p>}
-              <button onClick={() => void print()}>طباعة الإيصال</button>
+              {printStatus && <p className="success-message">{printStatus}</p>}
+              <button disabled={printing} onClick={() => void print()}>
+                {printing ? 'جارٍ تجهيز الإيصال…' : 'طباعة الإيصال'}
+              </button>
               <button
                 className="secondary"
                 autoFocus
@@ -320,7 +338,7 @@ export function OrdersScreen({
               >
                 إغلاق
               </button>
-              <small>فتح نافذة الطباعة لا يؤكد خروج ورقة فعلية.</small>
+              <small>إرسال الطباعة لا يؤكد خروج ورقة فعلية.</small>
             </div>
           </div>
         </div>

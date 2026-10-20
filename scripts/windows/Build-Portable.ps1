@@ -115,8 +115,7 @@ try {
   # shipped scripts contain Arabic text, so require their source encoding explicitly.
   foreach ($scriptWithArabicText in @(
     (Join-Path $PSScriptRoot 'Start-RestaurantPOS.ps1'),
-    (Join-Path $PSScriptRoot 'Test-Portable.ps1'),
-    (Join-Path $source 'server\src\maintenance\windows-folder-picker.ps1')
+    (Join-Path $PSScriptRoot 'Test-Portable.ps1')
   )) { Assert-Utf8Bom $scriptWithArabicText }
 
   # npm runs in Windows against the bundled Node runtime. Native postinstall scripts

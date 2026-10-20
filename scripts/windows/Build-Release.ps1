@@ -66,7 +66,6 @@ if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { Fail 'portable build failed.' }
 foreach ($required in @(
   (Join-Path $portable 'runtime\node.exe'),
   (Join-Path $portable 'app\server\dist\maintenance\supervisor-cli.js'),
-  (Join-Path $portable 'app\server\dist\maintenance\windows-folder-picker.ps1'),
   (Join-Path $portable 'app\client\dist\index.html'),
   (Join-Path $portable 'Launch-RestaurantPOS.vbs')
 )) {

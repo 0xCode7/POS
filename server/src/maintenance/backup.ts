@@ -5,23 +5,16 @@ import path from 'node:path';
 import type { AppDatabase } from '../db/database.js';
 import { verifyPassword } from '../auth/security.js';
 import {
-  chooseDirectory,
-  desktopCapability,
-  openDirectory,
-} from './desktop.js';
-import {
   migrationCompatibility,
   migrationSignatures,
 } from './backup-validation.js';
 import {
   backupDirectorySource,
   ensurePrivateDirectory,
-  persistBackupDirectory,
   readBackupSettings,
   resolveBackupDirectory,
   safeBackupPath,
   samePhysicalDevice,
-  validateWritableBackupDirectory,
 } from './paths.js';
 
 export type BackupKind = 'daily' | 'manual' | 'pre-restore';
@@ -72,7 +65,6 @@ export class BackupService {
     return {
       directory: this.directory,
       directorySource: backupDirectorySource(this.database.filename),
-      environmentManaged: Boolean(process.env.POS_BACKUP_DIR),
       previousDirectories:
         readBackupSettings(this.database.filename)?.previousDirectories ?? [],
       retentionDays: this.retentionDays,
@@ -87,44 +79,7 @@ export class BackupService {
       sameDiskWarning:
         'النسخة الموجودة على نفس القرص لا تحمي من تعطل القرص. استخدم قرصًا آخر إن أمكن.',
       restoreMode: 'offline-cli' as const,
-      openFolderSupported: desktopCapability().available,
-      openFolderMessage: desktopCapability().message,
-      nativeFolderPicker: desktopCapability(),
     };
-  }
-
-  changeDirectory(candidate: string) {
-    if (this.running)
-      throw new Error(
-        'لا يمكن تغيير مجلد النسخ أثناء تنفيذ عملية نسخ احتياطي.',
-      );
-    const directory = validateWritableBackupDirectory(
-      candidate,
-      this.database.filename,
-    );
-    persistBackupDirectory(this.database.filename, directory, this.directory);
-    this.activeDirectory = directory;
-    return this.status();
-  }
-
-  async chooseDirectoryWithNativePicker() {
-    const directory = await chooseDirectory();
-    if (!directory) return { selected: false as const };
-    return {
-      selected: true as const,
-      directory: validateWritableBackupDirectory(
-        directory,
-        this.database.filename,
-      ),
-    };
-  }
-
-  async openConfiguredDirectory() {
-    const directory = validateWritableBackupDirectory(
-      this.directory,
-      this.database.filename,
-    );
-    await openDirectory(directory);
   }
 
   history(limit = 50) {
@@ -536,9 +491,18 @@ function retentionDays(value: string | undefined) {
 }
 
 function safeMessage(error: unknown) {
-  return error instanceof Error
-    ? error.message
-    : 'حدث خطأ غير معروف في النسخ الاحتياطي.';
+  const message = error instanceof Error ? error.message : '';
+  // Never surface platform paths, native SQLite diagnostics, or permissions
+  // details in the operational screen. Keep deliberate Arabic validation
+  // messages intact and turn expected operational failures into clear Arabic.
+  if (/[؀-ۿ]/u.test(message)) return message;
+  if (/ENOSPC|no space|disk full/i.test(message))
+    return 'نفدت مساحة التخزين أثناء النسخ التلقائي. حرر مساحة ثم راجع سجل النسخ.';
+  if (/EACCES|EPERM|permission denied/i.test(message))
+    return 'لا يملك التطبيق صلاحية الكتابة في مجلد النسخ الاحتياطي.';
+  if (/SQLITE_BUSY|database is locked|busy/i.test(message))
+    return 'قاعدة البيانات مشغولة الآن؛ سيعاد فحص النسخ التلقائي لاحقًا.';
+  return 'تعذر إنشاء النسخة الاحتياطية التلقائية. راجع سجل التطبيق المحلي.';
 }
 
 function arabicValidationMessage(error: unknown) {

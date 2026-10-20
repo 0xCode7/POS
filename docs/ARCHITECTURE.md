@@ -8,13 +8,12 @@ BrowserWindow renderer (React, sandboxed, no Node)
 Electron main -> trusted Supervisor -> Express backend -> SQLite
 ```
 
-Electron selects a loopback port, creates a private per-launch desktop bridge,
-starts the Supervisor with `ELECTRON_RUN_AS_NODE=1`, and waits for health before
+Electron selects a loopback port, starts the Supervisor with
+`ELECTRON_RUN_AS_NODE=1`, and waits for health before
 navigating the window. `contextIsolation` and sandboxing remain enabled while
 Node integration is disabled. Preload exposes only print, restart, and
-open-logs calls. Folder chooser requests originate from the authenticated
-backend and are validated before persistence; the renderer has no generic path
-or filesystem IPC. The Supervisor remains alive for controlled restore while
+open-logs calls; the renderer has no generic filesystem or folder-picker IPC.
+The Supervisor remains alive for controlled restore while
 the backend is stopped.
 
 ## Runtime topology
@@ -114,9 +113,9 @@ Expired sessions are rejected at lookup and cleaned on service startup. Deactiva
 
 ### Backup, restore, and maintenance
 
-`better-sqlite3`'s Online Backup API creates a consistent temporary file while WAL writes may continue. Each backup passes `integrity_check`, `foreign_key_check`, migration metadata, and required-table checks before an atomic rename publishes it. Automatic daily and manual backups use generated safe filenames. Daily retention is 30 days by default, preserves at least seven daily copies, and never automatically removes manual or pre-restore copies.
+`better-sqlite3`'s Online Backup API creates a consistent temporary file while WAL writes may continue. Each backup passes `integrity_check`, `foreign_key_check`, migration metadata, and required-table checks before an atomic rename publishes it. The service attempts a daily backup at startup when none was completed in the preceding 24 hours, then checks hourly. Daily retention is 30 days by default, preserves at least seven daily copies, and never automatically removes manual or pre-restore copies.
 
-Backup-directory precedence is `POS_BACKUP_DIR`, then the locally persisted setting, then the default data-adjacent `backups` directory. The persisted `backup-settings.json` is written atomically beside the database, outside installation files in the supported deployment. A UI change requires an absolute writable path, rejects filesystem root, the live database directory, and the installation tree, and records up to ten previous locations without moving old copies. The service probes write access and compares filesystem device IDs where available. On a supported Linux desktop, a protected endpoint can invoke the fixed Zenity directory chooser and return only its validated result; browser folder handles are intentionally not treated as backend filesystem authority. Windows native picking remains a launcher responsibility.
+Backup-directory precedence is `POS_BACKUP_DIR`, then a previously persisted setting, then the default data-adjacent `backups` directory. The current UI intentionally treats this location as read-only: no authenticated HTTP endpoint opens, picks, or changes folders. This removes a retired Electron socket bridge and prevents browser filesystem controls from being mistaken for reliable native features. Existing persisted paths and backups are not changed or removed.
 
 Manual backup display names are normalized server-side and stored in an atomic `<generated-backup>.metadata.json` sidecar tied to the immutable generated SQLite filename, type, and timestamp. The sidecar makes the name portable when the backup pair is copied together, while missing or invalid sidecars degrade safely to a generated default label. Friendly names never participate in filesystem paths or restore identifiers.
 
@@ -187,9 +186,7 @@ The process logs operational errors but never request bodies, passwords, passwor
 - `GET /api/admin/reports/hourly` — admin-only restaurant-local hour series
 - `GET /api/admin/reports/receipts` — admin-only searchable/paginated receipt history
 - `GET /api/admin/backups` — admin-only backup status/history
-- `POST /api/admin/backups` — admin-only, CSRF-protected online backup
 - `GET /api/admin/backups/history` — validated, searchable paginated history
-- `PATCH /api/admin/backups/settings` — validate and persist a future backup directory
 - `POST /api/admin/backups/:filename/restore-preflight` — reauthentication and compatibility check only; never restores
 
 All state-changing endpoints require CSRF proof. API user representations never include hashes or tokens.

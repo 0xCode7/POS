@@ -334,7 +334,7 @@ function setupIpc() {
     // desktop runs always use Electron's native print dialog below.
     if (process.env.POS_ELECTRON_DISABLE_PRINT_DIALOG === '1') {
       desktopLog('print_dialog_skipped_for_automation', 'receipt preview');
-      return { ok: true };
+      return { ok: true, status: 'submitted' as const };
     }
     return new Promise((resolve) =>
       mainWindow?.webContents.print(
@@ -342,8 +342,14 @@ function setupIpc() {
         (success, reason) =>
           resolve(
             success
-              ? { ok: true }
-              : { ok: false, error: reason || 'تعذر فتح نافذة الطباعة.' },
+              ? { ok: true, status: 'submitted' as const }
+              : {
+                  ok: false,
+                  cancelled: /cancel/i.test(reason ?? ''),
+                  error: /cancel/i.test(reason ?? '')
+                    ? 'تم إلغاء إرسال الإيصال للطباعة.'
+                    : 'تعذر إرسال الإيصال للطباعة. حاول مرة أخرى.',
+                },
           ),
       ),
     );

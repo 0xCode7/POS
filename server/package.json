@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../.env src/index.ts",
-    "build": "tsc -p tsconfig.json && node -e \"const fs=require('node:fs'); fs.cpSync('drizzle','dist/drizzle',{recursive:true}); fs.copyFileSync('src/maintenance/windows-folder-picker.ps1','dist/maintenance/windows-folder-picker.ps1')\"",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('drizzle','dist/drizzle',{recursive:true})\"",
     "start": "cross-env NODE_ENV=production node --env-file-if-exists=../.env dist/index.js",
     "restore": "tsx --env-file-if-exists=../.env src/maintenance/restore-cli.ts",
     "supervisor": "npm run build && node --env-file-if-exists=../.env dist/maintenance/supervisor-cli.js",

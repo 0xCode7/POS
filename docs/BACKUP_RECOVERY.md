@@ -11,15 +11,15 @@ POS_BACKUP_RETENTION_DAYS=30
 
 Directory precedence is:
 
-1. `POS_BACKUP_DIR`, when set before service startup. The UI shows that the location is environment-managed and cannot override it.
-2. The administrator-selected path in `backup-settings.json` beside the live database.
+1. `POS_BACKUP_DIR`, when set before service startup.
+2. A previously persisted path in `backup-settings.json` beside the live database.
 3. The default `backups` subdirectory.
 
-The dedicated **النسخ الاحتياطية** page offers **اختيار مجلد** first when the local service is running in a supported Linux desktop session with Zenity available. The protected local backend opens the fixed directory-only Zenity dialog itself; the browser never submits a filesystem path or command. The chosen path is validated, displayed, and must be confirmed before it is saved. In headless Linux, ordinary browser-only operation, and future Windows builds before the launcher exists, the control is disabled with an explanation and **إدخال مسار يدوي** remains available. Browser folder-selection APIs are not used because a browser permission does not grant the Node service write access. “Open Folder” remains disabled until a trusted Windows launcher exists.
+The dedicated **النسخ الاحتياطية** page is read-only. It never opens or chooses a folder, accepts a path, or creates a manual copy. This keeps browser and retired desktop-IPC filesystem operations out of the checkout application. Set a stable absolute `POS_BACKUP_DIR` before startup when an operator needs a different destination; existing saved paths remain readable and in use.
 
 Manual backups may have an optional Arabic or English friendly name. The generated SQLite filename remains the immutable technical identifier. The name is normalized and stored in a restrictive adjacent `<filename>.metadata.json` sidecar that contains the filename, type, and timestamp, so copying the SQLite file **together with its matching metadata sidecar** preserves the label on another drive. If a sidecar is absent, corrupt, or belongs to a different file, the application safely falls back to a default label; old backups remain usable. Do not rename either member of this backup pair.
 
-The service creates a daily backup when no successful daily copy exists in the preceding 24 hours. An admin can also choose **إنشاء نسخة الآن** on the dedicated backup page. Checkout does not wait for automatic failure recovery and a failed backup does not roll back or alter a payment.
+The service creates a daily backup when no successful daily copy exists in the preceding 24 hours, including after application startup. Checkout does not wait for automatic backup work and a failed backup does not roll back or alter a payment.
 
 SQLite's Online Backup API, rather than copying the live `.sqlite` file, captures WAL-consistent state. The application writes to a `.partial` file, runs `integrity_check`, `foreign_key_check`, verifies migration metadata and required tables, applies restrictive permissions where supported, then publishes with an atomic rename. A backup appears in history only after those steps succeed.
 

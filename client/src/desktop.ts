@@ -1,11 +1,14 @@
-export async function openReceiptPrintDialog() {
+export type ReceiptPrintResult = 'submitted' | 'dialog-opened';
+
+export async function openReceiptPrintDialog(): Promise<ReceiptPrintResult> {
   const desktop = window.restaurantDesktop;
   if (!desktop) {
     window.print();
-    return;
+    return 'dialog-opened';
   }
   const result = await desktop.printReceipt();
   if (!result.ok) throw new Error(result.error);
+  return result.status;
 }
 
 export async function waitForDesktopServiceRecovery() {

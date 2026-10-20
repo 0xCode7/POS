@@ -65,21 +65,20 @@ physical output remain unverified.
 
 `npm run test:electron:linux` uses a fresh temporary Electron user-data
 directory, creates an administrator and a paid order through the rendered UI,
-checks the receipt preview and report, creates an Arabic-named backup, then
+checks the receipt preview, report, and automatically created verified backup, then
 fully closes and reopens the app three times while checking that the same sale
 remains. It deletes that temporary directory afterward. A human must still
 confirm the system print dialog on the target desktop.
 
-The service creates one verified SQLite Online Backup per day while running.
-Admins can view status and validation history and create optional Arabic-named
-manual backups from **النسخ الاحتياطية**. The active backup location is shown
-read-only; this emergency Windows delivery intentionally hides folder picking,
-manual path entry, and folder opening. A friendly manual name is stored next to
-its generated SQLite file as a matching `.metadata.json` sidecar—copy both
-files together to preserve it. Use another physical drive for protection
-against primary-disk loss. Same-disk backups only protect against some logical
-failures. Interactive restore is disabled pending another full supervisor
-lifecycle validation; preserve the documented offline maintenance CLI. Follow
+The service creates one verified SQLite Online Backup per day while running and
+checks for a missed daily copy at startup. The backup page is read-only: it
+shows automatic status, active location, validation history, and errors; it
+intentionally has no folder picker, path entry, folder opening, or manual
+backup action. Existing configured paths and historical manual copies are
+preserved. Use another physical drive for protection against primary-disk loss.
+Same-disk backups only protect against some logical failures. Interactive
+restore is disabled pending another full supervisor lifecycle validation;
+preserve the documented offline maintenance CLI. Follow
 [Backup and recovery](docs/BACKUP_RECOVERY.md).
 
 ## Data location and migrations
