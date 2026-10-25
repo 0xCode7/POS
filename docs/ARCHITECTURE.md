@@ -99,6 +99,19 @@ Normal menu APIs never delete items. Archiving also disables availability, prese
 
 Checkout runs in one immediate transaction: validate nonempty/open/version, recompute totals from item snapshots, insert payment and receipt, transition to `PAID`, append `ORDER_PAID`, and save the idempotency fingerprint. Any failure rolls the whole settlement back. Printing happens afterward through a browser adapter boundary and cannot undo payment. Reprinting retrieves the same receipt and never creates another financial record.
 
+`purchases` is an admin-only operating-cost register added non-destructively by
+`0005_purchases.sql`. A row stores a normalized name, optional simple unit,
+Cairo-local `purchase_date`, creation/update actor IDs, and timestamps.
+`quantity_milli` stores one thousandth of a unit exactly; the unit and total
+costs use integer minor EGP units. The backend recalculates `total_minor` and
+rounds once to a piaster. A soft deletion keeps the deletion time and actor so
+removed rows disappear from active totals without erasing the audit trail.
+Indexes on active/date and name support bounded history filtering.
+
+Purchases deliberately have no relationship to menu items, orders, payments,
+receipts, stock, suppliers, tax, sales reporting, or profit. They are never
+subtracted from revenue.
+
 ### Sales reporting
 
 `payments` is the authoritative sales source. Every reporting query joins it to a `PAID` order; `OPEN`/`CANCELLED` orders and print attempts are excluded. Revenue is `SUM(payments.amount_due_minor)`, paid-order count is the payment count, average ticket is revenue divided by count and rounded to the nearest minor unit, cash received is `SUM(cash_tendered_minor)`, and change is `SUM(change_minor)`. Tendered cash is not revenue.
@@ -176,6 +189,11 @@ The process logs operational errors but never request bodies, passwords, passwor
 - `POST /api/orders/:id/cancel` — admin only, reason required
 - `GET /api/admin/orders` — admin-only paginated status/search history
 - `GET /api/admin/orders/:id` — admin-only order and cancellation details
+- `GET /api/admin/purchases` — admin-only paginated history; `search`, `day`, and `month` filters
+- `GET /api/admin/purchases/summary` — admin-only current day/month and selected-filter totals
+- `POST /api/admin/purchases` — admin-only, CSRF-protected purchase creation
+- `PATCH /api/admin/purchases/:id` — admin-only, CSRF-protected purchase editing
+- `DELETE /api/admin/purchases/:id` — admin-only, CSRF-protected soft deletion
 - `POST /api/orders/:id/checkout` — authenticated atomic cash settlement
 - `GET /api/receipts/:id` — authenticated receipt retrieval/reprint
 - `POST /api/receipts/:id/print-attempts` — authenticated non-financial print logging

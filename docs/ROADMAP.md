@@ -122,4 +122,17 @@
 - final installer/signing/service registration only after Stage 9A Windows evidence
 - optional native Windows thermal-printer adapter after hardware validation
 
+## Purchases management (complete)
+
+- admin-only Arabic RTL purchases register for restaurant operating costs
+- non-destructive `0005_purchases.sql` migration with exact scaled quantities,
+  integer EGP minor units, server-owned totals, audit-backed soft deletion, and
+  date/search indexes
+- day/month/search filters, selected-period totals, pagination, add/edit/delete
+  confirmation, and responsive form validation
+- intentionally separate from inventory, suppliers, orders, payments, revenue,
+  sales reports, tax, and profit
+- isolated migration, API/RBAC/CSRF, fractional-calculation, backup,
+  persistence, and Chromium workflow coverage
+
 Future work must preserve offline operation, migrate existing data without resets, store money in integer minor units, and add tests for every migration and permission boundary.

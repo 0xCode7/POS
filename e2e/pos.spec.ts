@@ -179,6 +179,36 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
       .locator('strong'),
   ).toHaveText('1');
 
+  await page.getByRole('button', { name: 'المشتريات' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'المشتريات', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'إضافة مشتريات' }).click();
+  const purchaseDialog = page.getByRole('dialog', { name: 'إضافة مشتريات' });
+  await purchaseDialog.getByLabel('اسم المشتريات').fill('أرز بسمتي');
+  await purchaseDialog.getByLabel('الكمية').fill('1.5');
+  await purchaseDialog.getByLabel('الوحدة (اختياري)').fill('كيلو');
+  await purchaseDialog.getByLabel('سعر الوحدة (ج.م)').fill('32.5');
+  await purchaseDialog.getByLabel('التاريخ').fill('2026-10-25');
+  await expect(purchaseDialog.getByText('الإجمالي المتوقع')).toBeVisible();
+  await purchaseDialog.getByRole('button', { name: 'حفظ' }).click();
+  await expect(page.locator('.purchases-table')).toContainText('أرز بسمتي');
+  await expect(page.locator('.purchases-table')).toContainText('٤٨٫٧٥');
+  await page.getByRole('button', { name: 'تعديل' }).click();
+  const editPurchaseDialog = page.getByRole('dialog', {
+    name: 'تعديل المشتريات',
+  });
+  await editPurchaseDialog.getByLabel('اسم المشتريات').fill('أرز فاخر');
+  await editPurchaseDialog.getByRole('button', { name: 'حفظ' }).click();
+  await expect(page.locator('.purchases-table')).toContainText('أرز فاخر');
+  await page.getByLabel('بحث عن مشتريات').fill('فاخر');
+  await expect(page.locator('.purchases-table')).toContainText('أرز فاخر');
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.screenshot({
+    path: 'test-results/purchases-management-1366x768.png',
+    fullPage: false,
+  });
+
   await page.getByRole('button', { name: 'النسخ الاحتياطية' }).click();
   await expect(
     page.getByRole('heading', { name: 'النسخ الاحتياطية' }),
@@ -220,6 +250,7 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
   await page.getByLabel('كلمة المرور').fill(password);
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
   await expect(page.getByRole('button', { name: 'التقارير' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'المشتريات' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'الطلبات' })).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'النسخ الاحتياطية' }),
@@ -235,6 +266,13 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
     .poll(async () =>
       page.evaluate(async () =>
         fetch('/api/admin/backups').then((response) => response.status),
+      ),
+    )
+    .toBe(403);
+  await expect
+    .poll(async () =>
+      page.evaluate(async () =>
+        fetch('/api/admin/purchases').then((response) => response.status),
       ),
     )
     .toBe(403);

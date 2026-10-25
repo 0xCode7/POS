@@ -15,6 +15,8 @@ import { createOrderRouter } from './orders/routes.js';
 import { OrderError } from './orders/service.js';
 import { createPaymentRouter } from './payments/routes.js';
 import { createReportRouter } from './reports/routes.js';
+import { createPurchaseRouter } from './purchases/routes.js';
+import { PurchaseError } from './purchases/service.js';
 import { BackupService } from './maintenance/backup.js';
 import { createMaintenanceRouter } from './maintenance/routes.js';
 import type { LocalLogger } from './maintenance/logger.js';
@@ -186,6 +188,14 @@ export function createApp(options: AppOptions = {}) {
   );
   app.use(
     '/api',
+    createPurchaseRouter(database, {
+      authenticate: authenticate(auth),
+      requireAdmin,
+      csrf: csrfProtection,
+    }),
+  );
+  app.use(
+    '/api',
     createMaintenanceRouter(backups, {
       authenticate: authenticate(auth),
       requireAdmin,
@@ -227,7 +237,11 @@ export function createApp(options: AppOptions = {}) {
         response.status(error.status).json({ error: error.message });
         return;
       }
-      if (error instanceof MenuError || error instanceof OrderError) {
+      if (
+        error instanceof MenuError ||
+        error instanceof OrderError ||
+        error instanceof PurchaseError
+      ) {
         response.status(error.status).json({
           error: {
             code: error.code,

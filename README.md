@@ -1,6 +1,6 @@
 # Local Restaurant POS
 
-A local/offline point-of-sale application for one counter/takeaway restaurant and one Windows PC. Stage 8B/8C adds a cohesive Arabic-first RTL interface and responsive POS/admin workflows without changing the validated Stage 1–7 business logic. This restaurant has no dine-in tables or inventory. Card/split payments, refunds, profit/cost reporting, and native silent printing are not implemented. A Windows portable build is prepared in Stage 9A but has not been executed on Windows or turned into an installer.
+A local/offline point-of-sale application for one counter/takeaway restaurant and one Windows PC. Stage 8B/8C adds a cohesive Arabic-first RTL interface and responsive POS/admin workflows without changing the validated Stage 1–7 business logic. This restaurant has no dine-in tables or inventory. Card/split payments, refunds, profit calculation, and native silent printing are not implemented. Administrative purchase-cost tracking is available separately from sales; it is not inventory or profit reporting. A Windows portable build is prepared in Stage 9A but has not been executed on Windows or turned into an installer.
 
 ## Requirements and installation
 
@@ -23,6 +23,8 @@ The counter screen creates and reopens `OPEN` takeaway orders. Item names and pr
 Receipt preview supports 80 mm and 58 mm CSS layouts. Print/reprint invokes the ordinary browser print dialog. Opening that dialog does not prove that a physical receipt printed, and no silent/native printer integration is claimed.
 
 Administrators also have a reporting dashboard with today, yesterday, last-seven-days, month-to-date, and custom filters. Reports use payment time in `Africa/Cairo`, with an inclusive local start date and exclusive local end date. Revenue is the amount due from successful paid orders—not cash tendered—and is shown separately from cash received and change. Reports include daily/hourly sales, immutable sold-item snapshots, checkout-actor totals, and searchable receipt history. Cashiers cannot access reporting routes.
+
+Administrators can also record **المشتريات** (restaurant purchases) with a name, optional unit, exact quantity, EGP unit cost, and Cairo-local purchase date. Quantities are stored in thousandths and money in integer piastres; the server calculates the stored total. This is an independent administrative cost register with day/month/search filters and soft deletion. It has no inventory, supplier, tax, payment, revenue, or profit effect. Cashiers cannot view or modify it.
 
 ## Production-like operation
 
@@ -90,7 +92,7 @@ The default SQLite file is outside the installation tree:
 
 Set `POS_DATA_DIR` to an **absolute writable directory** to override this. The database, `-wal`/`-shm` files, and backups are ignored by Git. Back up the database only with SQLite-aware tooling or while the service is stopped cleanly; copying only the main file while WAL is active can lose committed data.
 
-Versioned SQL migrations live in `server/drizzle`. Startup applies pending migrations transactionally through Drizzle and preserves existing data. `0003_cash_settlement.sql` expands the order lifecycle to `PAID` and adds payments, receipts, receipt numbering, checkout fingerprints, and print attempts. It rebuilds the constrained SQLite order tables while copying existing Stage 4 rows. `0004_reporting_indexes.sql` only adds indexes for payment-time ranges and checkout-actor grouping; it creates no reporting or duplicate financial tables. Never use schema push or destructive resets against a restaurant database. Back up and test the exact database before upgrading.
+Versioned SQL migrations live in `server/drizzle`. Startup applies pending migrations transactionally through Drizzle and preserves existing data. `0003_cash_settlement.sql` expands the order lifecycle to `PAID` and adds payments, receipts, receipt numbering, checkout fingerprints, and print attempts. It rebuilds the constrained SQLite order tables while copying existing Stage 4 rows. `0004_reporting_indexes.sql` only adds indexes for payment-time ranges and checkout-actor grouping; it creates no reporting or duplicate financial tables. `0005_purchases.sql` only adds the independent, soft-deletable purchases register and its indexes. Never use schema push or destructive resets against a restaurant database. Back up and test the exact database before upgrading.
 
 ## Accounts and recovery
 

@@ -51,7 +51,7 @@ describe('backup, restore, and reliability', () => {
         .send({ name: 'أثناء النسخ', sortOrder: 0, isActive: true }),
     ]);
     expect(category.status).toBe(201);
-    expect(verifyBackup(path.join(backupDirectory, backup.filename))).toBe(5);
+    expect(verifyBackup(path.join(backupDirectory, backup.filename))).toBe(6);
     expect(
       fs.readdirSync(backupDirectory).some((name) => name.includes('.partial')),
     ).toBe(false);
@@ -372,7 +372,7 @@ describe('backup, restore, and reliability', () => {
       validation: 'valid',
       integrity: 'valid',
       compatibility: 'compatible',
-      pendingMigrations: 1,
+      pendingMigrations: 2,
       restoreEligible: true,
     });
     const originalBackupMigrations = new Database(backupPath, {
@@ -399,7 +399,7 @@ describe('backup, restore, and reliability', () => {
       database.sqlite
         .prepare('SELECT COUNT(*) AS count FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ count: 5 });
+    ).toEqual({ count: 6 });
     const untouchedBackup = new Database(backupPath, { readonly: true });
     expect(
       untouchedBackup
