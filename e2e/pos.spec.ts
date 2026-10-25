@@ -264,6 +264,10 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
   await page.getByLabel('اسم المستخدم').fill('cashier');
   await page.getByLabel('كلمة المرور').fill(password);
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
+  // Do not mistake the unchanged login screen for a cashier session on a
+  // slower Windows runner. The POS navigation is rendered only after the
+  // server-side session has been confirmed by the client.
+  await expect(page.getByRole('button', { name: 'نقطة البيع' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'التقارير' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'المشتريات' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'الطلبات' })).toHaveCount(0);
