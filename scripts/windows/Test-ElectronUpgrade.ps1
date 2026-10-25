@@ -73,8 +73,19 @@ function Wait-ForHealthStop([int]$Port, [int]$TimeoutSeconds = 35) {
   } while ([DateTime]::UtcNow -lt $deadline)
   Fail "The disposable service remained running on port $Port after a graceful stop."
 }
-function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name) {
-  $process = Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru
+function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name, [int]$TimeoutSeconds = 180, [string]$LogPath = '') {
+  $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    $diagnostics = ''
+    if ($LogPath -and (Test-Path -LiteralPath $LogPath)) {
+      $diagnostics = (Get-Content -LiteralPath $LogPath -Tail 80 -ErrorAction SilentlyContinue) -join [Environment]::NewLine
+    }
+    # This is the exact disposable installer process started by this test; do
+    # not leave an unbounded child process on a hosted runner.
+    & taskkill.exe /pid $process.Id /t /f | Out-Null
+    Fail "$Name did not exit within $TimeoutSeconds seconds. Inno diagnostic log: $diagnostics"
+  }
+  $process.Refresh()
   if ($process.ExitCode -ne 0) { Fail "$Name failed with exit code $($process.ExitCode)." }
 }
 function Get-Sha256([string]$File) {
@@ -91,6 +102,7 @@ if (-not (Test-Path -LiteralPath $newSetup)) { Fail "New Electron installer is m
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("restaurant-pos-electron-upgrade-" + [guid]::NewGuid())
 $legacySetup = Join-Path $testRoot 'legacy-setup.exe'
 $legacyChecksums = Join-Path $testRoot 'legacy-SHA256SUMS.txt'
+$legacyInstallerLog = Join-Path $testRoot 'legacy-installer.log'
 $installDirectory = Join-Path $testRoot 'Programs\Restaurant POS'
 $dataRoot = Join-Path $testRoot 'acceptance-data'
 $localAppData = Join-Path $dataRoot 'local-app-data'
@@ -120,7 +132,7 @@ try {
   # of its supported per-user path. The next installer intentionally receives
   # no /D argument, so customInit must discover this prior installation.
   Write-Host 'Upgrade test: installing the published legacy application into an isolated directory.'
-  Invoke-Installer $legacySetup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$installDirectory`"") 'Published legacy installer'
+  Invoke-Installer $legacySetup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$installDirectory`"", "/LOG=`"$legacyInstallerLog`"") 'Published legacy installer' 180 $legacyInstallerLog
   $legacyLauncher = Join-Path $installDirectory 'Launch-RestaurantPOS.vbs'
   $legacyStop = Join-Path $installDirectory 'Stop-RestaurantPOS.ps1'
   foreach ($required in @($legacyLauncher, $legacyStop, (Join-Path $installDirectory 'runtime\node.exe'))) {
