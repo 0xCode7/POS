@@ -11,17 +11,46 @@ Set-StrictMode -Version Latest
 function Fail([string]$Message) { throw "Electron upgrade test: $Message" }
 function Remove-TestRoot([string]$Path) {
   $lastError = $null
-  foreach ($attempt in 1..15) {
+  # This is strictly disposable CI data.  It is useful to clean it when the
+  # file system has released every handle, but a Windows antivirus scanner can
+  # retain a short-lived handle after all Restaurant POS processes have exited.
+  # Do not let that non-product condition consume the whole job timeout.
+  foreach ($attempt in 1..5) {
     if (-not (Test-Path -LiteralPath $Path)) { return }
     try {
       Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
       return
     } catch {
       $lastError = $_
-      Start-Sleep -Seconds 2
+      Start-Sleep -Seconds 1
     }
   }
-  throw "Could not release disposable upgrade root after 30 seconds: $($lastError.Exception.Message)"
+  Write-Warning "Could not remove the disposable upgrade root after 5 seconds: $($lastError.Exception.Message). The hosted runner will remove it after this isolated job."
+}
+
+function Get-TestOwnedProcesses([string]$Path) {
+  $normalizedPath = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+  $pathPrefix = "$normalizedPath\"
+  @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $executablePath = $_.ExecutablePath
+    $commandLine = $_.CommandLine
+    ($executablePath -and [System.IO.Path]::GetFullPath($executablePath).StartsWith($pathPrefix, [System.StringComparison]::OrdinalIgnoreCase)) -or
+      ($commandLine -and $commandLine.IndexOf($normalizedPath, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+  })
+}
+
+function Assert-NoTestOwnedProcesses([string]$Path, [int]$TimeoutSeconds = 20) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  do {
+    $processes = @(Get-TestOwnedProcesses $Path)
+    if ($processes.Count -eq 0) { return }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $deadline)
+
+  $details = ($processes | ForEach-Object {
+    "PID=$($_.ProcessId), executable=$($_.ExecutablePath), command=$($_.CommandLine)"
+  }) -join '; '
+  Fail "The disposable upgrade left Restaurant POS-owned processes running: $details"
 }
 function Wait-ForHealth([int]$Port, [int]$TimeoutSeconds = 45) {
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -76,6 +105,7 @@ $legacyRunning = $false
 
 try {
   New-Item -ItemType Directory -Path $testRoot, $localAppData -Force | Out-Null
+  Write-Host 'Upgrade test: downloading and verifying the published legacy installer.'
   Invoke-WebRequest -UseBasicParsing -Uri "$LegacyReleaseBase/RestaurantPOS-Setup.exe" -OutFile $legacySetup
   Invoke-WebRequest -UseBasicParsing -Uri "$LegacyReleaseBase/SHA256SUMS.txt" -OutFile $legacyChecksums
   $expectedLine = Get-Content -LiteralPath $legacyChecksums | Where-Object { $_ -match '\*RestaurantPOS-Setup\.exe$' } | Select-Object -First 1
@@ -89,6 +119,7 @@ try {
   # This is the actual legacy Inno installer, installed into a disposable copy
   # of its supported per-user path. The next installer intentionally receives
   # no /D argument, so customInit must discover this prior installation.
+  Write-Host 'Upgrade test: installing the published legacy application into an isolated directory.'
   Invoke-Installer $legacySetup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$installDirectory`"") 'Published legacy installer'
   $legacyLauncher = Join-Path $installDirectory 'Launch-RestaurantPOS.vbs'
   $legacyStop = Join-Path $installDirectory 'Stop-RestaurantPOS.ps1'
@@ -100,6 +131,7 @@ try {
   $env:POS_UPGRADE_TEST_USERNAME = 'electron-owner'
   $env:POS_UPGRADE_TEST_PASSWORD = (& node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('base64url'))").Trim()
   $wscript = Join-Path $env:WINDIR 'System32\wscript.exe'
+  Write-Host 'Upgrade test: creating an isolated legacy admin, paid order, and receipt.'
   Start-Process -FilePath $wscript -ArgumentList "//B `"$legacyLauncher`" -Port $port -NoBrowser" -WorkingDirectory $installDirectory | Out-Null
   $legacyRunning = $true
   Wait-ForHealth $port
@@ -112,6 +144,7 @@ try {
   node (Join-Path $root 'scripts\windows\assert-upgrade-database.mjs') legacy $database $stateFile
   if ($LASTEXITCODE -ne 0) { Fail 'Legacy database pre-upgrade verification failed.' }
 
+  Write-Host 'Upgrade test: installing the new Electron application over the legacy installation.'
   Invoke-Installer $newSetup @('/S') 'Electron in-place upgrade'
   $electronExecutable = Join-Path $installDirectory 'RestaurantPOS.exe'
   if (-not (Test-Path -LiteralPath $electronExecutable)) {
@@ -124,6 +157,7 @@ try {
   # The real packaged Electron app opens the legacy data, runs the pending
   # migration once, verifies the original sale in the UI, creates one purchase,
   # and confirms both old and new records after a complete relaunch.
+  Write-Host 'Upgrade test: opening the packaged Electron app against the preserved database.'
   $previous = @{
     Executable = $env:POS_PACKAGED_ELECTRON_EXECUTABLE
     Headless = $env:POS_ELECTRON_ACCEPTANCE_HEADLESS
@@ -157,6 +191,8 @@ try {
   }
   node (Join-Path $root 'scripts\windows\assert-upgrade-database.mjs') upgraded $database $stateFile
   if ($LASTEXITCODE -ne 0) { Fail 'Post-upgrade financial and migration verification failed.' }
+  Assert-NoTestOwnedProcesses $testRoot
+  Write-Host 'Upgrade test: original financial records and the one-time purchases migration are preserved.'
 } finally {
   if ($legacyRunning -and (Test-Path -LiteralPath (Join-Path $installDirectory 'Stop-RestaurantPOS.ps1'))) {
     try { & (Join-Path $installDirectory 'Stop-RestaurantPOS.ps1') } catch { Write-Warning 'Could not stop the disposable legacy Supervisor.' }
