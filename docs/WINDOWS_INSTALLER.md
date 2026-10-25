@@ -32,9 +32,45 @@ receipts.
 installer into a disposable directory, creates an admin/menu/paid receipt with
 the old executable, installs the Electron installer without a `/D` override,
 then verifies the original records, migration count, one new purchase, complete
-shutdown/relaunch, and foreign keys. It is run by the Windows release workflow.
-The Portable ZIP is not an installer and never performs this migration
-automatically.
+shutdown/relaunch, and foreign keys. The Portable ZIP is not an installer and
+never performs this migration automatically.
+
+> **Current verification status:** this historic Inno Setup acceptance is
+> **UNVERIFIED** on GitHub-hosted Windows. The published Inno installer remains
+> running in that non-interactive runner before it writes its installer log or
+> reaches the database fixture. This must not be confused with the independent
+> database compatibility test: the latter verifies a copied, populated legacy
+> SQLite database and migration `0005_purchases.sql`, but cannot prove that the
+> historic installer itself completed its installation.
+
+### Required interactive legacy-to-Electron upgrade acceptance
+
+Run this only on a clean, interactive Windows 10/11 x64 desktop using a new
+Windows account or disposable VM. Do not use restaurant data.
+
+1. Download the published `v0.2.2-windows-stabilization-preview`
+   `RestaurantPOS-Setup.exe` and verify it against that release's
+   `SHA256SUMS.txt`.
+2. Run it normally, complete the installer, and create an Admin, one menu item,
+   one paid cash order, and its receipt. Record the database path, order ID,
+   receipt ID, and a pre-upgrade backup.
+3. Fully close the old application using its supplied stop command; verify that
+   `restaurant-pos.sqlite`, `-wal`, and `-shm` are in
+   `%LOCALAPPDATA%\RestaurantPOS\data`, not under the installation directory.
+4. Run the new Electron Setup.exe over the old installation without uninstalling
+   or deleting `%LOCALAPPDATA%\RestaurantPOS`. Confirm the installer path is
+   reused and the desktop/Start Menu shortcuts launch `RestaurantPOS.exe`.
+5. Sign in using the original Admin. Verify the saved order, receipt, payment,
+   and menu item match the recorded values. Add one purchase, close the entire
+   app, reopen it twice, and verify every old and new record remains.
+6. Collect the installer exit code, `%TEMP%` Inno `/LOG` output, the two
+   application versions, the canonical database path, screenshots of the
+   records, and `PRAGMA foreign_key_check`/migration-count results. A successful
+   health check alone is not sufficient evidence.
+
+If the historic installer cannot complete in this interactive procedure, stop:
+preserve the disposable VM and logs, do not replace or initialize the existing
+database, and do not release as upgrade-safe.
 
 Stage 9B defines a real Inno Setup installer, but this Linux environment has not built or executed it. Do not distribute it until the Windows release workflow or an interactive Windows x64 build machine produces the actual files and records test evidence.
 

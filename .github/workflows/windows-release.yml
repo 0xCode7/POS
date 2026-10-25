@@ -33,6 +33,13 @@ jobs:
       - name: Run source checks
         run: npm run check
 
+      # This makes the migration evidence explicit: it starts with a copied,
+      # populated legacy SQLite database and proves 0005 preserves financial
+      # records. It is deliberately not accepted as proof that the historic
+      # Inno Setup executable can install on a real Windows desktop.
+      - name: Verify copied legacy SQLite database compatibility
+        run: npm run test --workspace server -- purchases.test.ts
+
       - name: Install Playwright Chromium
         run: npx playwright install chromium
 
@@ -88,7 +95,10 @@ jobs:
         run: |
           .\scripts\windows\Test-ElectronInstaller.ps1
 
-      - name: Verify published legacy installer upgrade preserves customer data
+      # This remains an independent, stricter installer acceptance check. A
+      # failure is visible and blocks release approval; it is not masked by the
+      # database-only compatibility evidence above.
+      - name: Verify published legacy Inno installer upgrade preserves customer data
         shell: powershell
         run: |
           .\scripts\windows\Test-ElectronUpgrade.ps1

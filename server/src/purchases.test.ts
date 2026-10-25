@@ -262,6 +262,151 @@ describe('admin purchases management', () => {
     );
   });
 
+  it('migrates a copied populated legacy database without changing its source financial records', async () => {
+    database.sqlite.close();
+    fs.unlinkSync(path.join(directory, 'restaurant-pos.sqlite'));
+    const legacyMigrations = path.join(directory, 'legacy-migrations');
+    fs.mkdirSync(path.join(legacyMigrations, 'meta'), { recursive: true });
+    const source = path.resolve('drizzle');
+    for (const name of [
+      '0000_auth.sql',
+      '0001_menu.sql',
+      '0002_orders.sql',
+      '0003_cash_settlement.sql',
+      '0004_reporting_indexes.sql',
+    ])
+      fs.copyFileSync(
+        path.join(source, name),
+        path.join(legacyMigrations, name),
+      );
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(source, 'meta', '_journal.json'), 'utf8'),
+    ) as { entries: unknown[] };
+    journal.entries = journal.entries.slice(0, 5);
+    fs.writeFileSync(
+      path.join(legacyMigrations, 'meta', '_journal.json'),
+      JSON.stringify(journal),
+    );
+
+    database = openDatabase({
+      dataDirectory: directory,
+      migrationsFolder: legacyMigrations,
+    });
+    const { adminAgent } = await actors();
+    const category = await adminAgent
+      .post('/api/admin/menu/categories')
+      .set(csrf)
+      .send({ name: 'اختبار ترقية', sortOrder: 1, isActive: true })
+      .expect(201);
+    const item = await adminAgent
+      .post('/api/admin/menu/items')
+      .set(csrf)
+      .send({
+        categoryId: category.body.category.id,
+        name: 'وجبة تاريخية',
+        description: null,
+        priceMinor: 2_500,
+        sortOrder: 1,
+        isAvailable: true,
+      })
+      .expect(201);
+    const order = await adminAgent
+      .post('/api/orders')
+      .set(csrf)
+      .set('Idempotency-Key', 'legacy-copy-order')
+      .expect(201);
+    const changed = await adminAgent
+      .post(`/api/orders/${order.body.order.id}/items`)
+      .set(csrf)
+      .set('Idempotency-Key', 'legacy-copy-item')
+      .send({
+        menuItemId: item.body.item.id,
+        quantity: 1,
+        expectedVersion: order.body.order.version,
+      })
+      .expect(201);
+    const checkout = await adminAgent
+      .post(`/api/orders/${order.body.order.id}/checkout`)
+      .set(csrf)
+      .set('Idempotency-Key', 'legacy-copy-checkout')
+      .send({
+        cashTenderedMinor: 3_000,
+        expectedVersion: changed.body.order.version,
+      })
+      .expect(200);
+
+    // SQLite WAL content must be checkpointed before making the test copy. The
+    // source remains closed and is opened read-only below to prove migration
+    // never modifies historical customer data in place.
+    database.sqlite.pragma('wal_checkpoint(TRUNCATE)');
+    database.sqlite.close();
+    const copiedDirectory = path.join(directory, 'legacy-copy');
+    fs.mkdirSync(copiedDirectory);
+    const sourceDatabase = path.join(directory, 'restaurant-pos.sqlite');
+    const copiedDatabase = path.join(copiedDirectory, 'restaurant-pos.sqlite');
+    fs.copyFileSync(sourceDatabase, copiedDatabase);
+
+    const legacy = new Database(sourceDatabase, { readonly: true });
+    expect(
+      legacy
+        .prepare('SELECT COUNT(*) AS count FROM __drizzle_migrations')
+        .get(),
+    ).toEqual({ count: 5 });
+    expect(
+      legacy
+        .prepare(
+          'SELECT status, total_minor AS totalMinor FROM orders WHERE id = ?',
+        )
+        .get(order.body.order.id),
+    ).toEqual({ status: 'PAID', totalMinor: 2_500 });
+    expect(
+      legacy
+        .prepare('SELECT id FROM receipts WHERE id = ?')
+        .get(checkout.body.receipt.id),
+    ).toEqual({ id: checkout.body.receipt.id });
+    legacy.close();
+
+    database = openDatabase({ dataDirectory: copiedDirectory });
+    expect(
+      database.sqlite
+        .prepare('SELECT COUNT(*) AS count FROM __drizzle_migrations')
+        .get(),
+    ).toEqual({ count: 6 });
+    expect(
+      database.sqlite
+        .prepare('SELECT username FROM users WHERE username = ?')
+        .get(admin.username),
+    ).toEqual({ username: admin.username });
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT status, total_minor AS totalMinor FROM orders WHERE id = ?',
+        )
+        .get(order.body.order.id),
+    ).toEqual({ status: 'PAID', totalMinor: 2_500 });
+    expect(
+      database.sqlite
+        .prepare('SELECT id FROM receipts WHERE id = ?')
+        .get(checkout.body.receipt.id),
+    ).toEqual({ id: checkout.body.receipt.id });
+    expect(database.sqlite.pragma('foreign_key_check')).toEqual([]);
+
+    database.sqlite.close();
+    database = openDatabase({ dataDirectory: copiedDirectory });
+    expect(
+      database.sqlite
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'purchases'",
+        )
+        .get(),
+    ).toEqual({ name: 'purchases' });
+    expect(
+      database.sqlite
+        .prepare('SELECT COUNT(*) AS count FROM __drizzle_migrations')
+        .get(),
+    ).toEqual({ count: 6 });
+  });
+
   function app() {
     return createApp({ database, disableRateLimit: true });
   }

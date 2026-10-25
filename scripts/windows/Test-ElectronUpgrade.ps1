@@ -73,8 +73,49 @@ function Wait-ForHealthStop([int]$Port, [int]$TimeoutSeconds = 35) {
   } while ([DateTime]::UtcNow -lt $deadline)
   Fail "The disposable service remained running on port $Port after a graceful stop."
 }
+
+function Get-ProcessTreeDetails([int]$RootProcessId) {
+  $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+  $pending = [System.Collections.Generic.Queue[int]]::new()
+  $pending.Enqueue($RootProcessId)
+  $seen = [System.Collections.Generic.HashSet[int]]::new()
+  $details = [System.Collections.Generic.List[string]]::new()
+  while ($pending.Count -gt 0) {
+    $processId = $pending.Dequeue()
+    if (-not $seen.Add($processId)) { continue }
+    $process = $all | Where-Object { $_.ProcessId -eq $processId } | Select-Object -First 1
+    if ($process) {
+      [void]$details.Add("PID=$($process.ProcessId), parent=$($process.ParentProcessId), name=$($process.Name), executable=$($process.ExecutablePath), command=$($process.CommandLine)")
+    }
+    foreach ($child in $all | Where-Object { $_.ParentProcessId -eq $processId }) {
+      $pending.Enqueue([int]$child.ProcessId)
+    }
+  }
+  return $details -join [Environment]::NewLine
+}
+
+function Get-RecentInstallerEvents([datetime]$StartedAt) {
+  try {
+    return (
+      Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $StartedAt } -ErrorAction Stop |
+        Where-Object {
+          $_.ProviderName -match 'Inno|Setup|Application Error' -or
+            $_.Message -match 'Restaurant POS|legacy-setup|Inno Setup'
+        } |
+        Select-Object -First 20 |
+        ForEach-Object {
+          "time=$($_.TimeCreated.ToUniversalTime().ToString('o')), provider=$($_.ProviderName), id=$($_.Id), message=$($_.Message -replace '[\r\n]+', ' ')"
+        }
+    ) -join [Environment]::NewLine
+  } catch {
+    return "Windows event query unavailable: $($_.Exception.Message)"
+  }
+}
+
 function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name, [int]$TimeoutSeconds = 180, [string]$LogPath = '') {
+  $startedAt = [DateTime]::UtcNow
   $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru
+  Write-Host "$Name started at $($startedAt.ToString('o')) with PID $($process.Id)."
   if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
     $diagnostics = ''
     if ($LogPath -and (Test-Path -LiteralPath $LogPath)) {
@@ -82,8 +123,10 @@ function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name, [i
     }
     # This is the exact disposable installer process started by this test; do
     # not leave an unbounded child process on a hosted runner.
+    $tree = Get-ProcessTreeDetails $process.Id
+    $events = Get-RecentInstallerEvents $startedAt
     & taskkill.exe /pid $process.Id /t /f | Out-Null
-    Fail "$Name did not exit within $TimeoutSeconds seconds. Inno diagnostic log: $diagnostics"
+    Fail "$Name did not exit within $TimeoutSeconds seconds. Process tree: $tree. Windows events: $events. Inno diagnostic log: $diagnostics"
   }
   $process.Refresh()
   if ($process.ExitCode -ne 0) { Fail "$Name failed with exit code $($process.ExitCode)." }
