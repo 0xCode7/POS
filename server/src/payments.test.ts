@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { DateTime } from 'luxon';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
@@ -229,6 +230,76 @@ describe('cash checkout and receipts', () => {
     expect(stored.body.receipt.snapshot.totalMinor).toBe(5000);
   });
 
+  it('uses edited menu details only for new sales and preserves paid receipts and reports', async () => {
+    const { adminAgent, cashier, order, menuItemId } = await fixture();
+    const originalReceipt = await pay(cashier, order, 5000, 'paid-before-edit');
+
+    await adminAgent
+      .patch(`/api/admin/menu/items/${menuItemId}`)
+      .set(csrf)
+      .send({ name: 'شاي فاخر', priceMinor: 6_000 })
+      .expect(200);
+
+    const nextEmptyOrder = await createOrder(cashier, 'order-after-menu-edit');
+    const nextOrder = await addItem(
+      cashier,
+      nextEmptyOrder,
+      menuItemId,
+      'add-after-menu-edit',
+      1,
+    );
+    expect(nextOrder.items[0]).toMatchObject({
+      itemNameSnapshot: 'شاي فاخر',
+      unitPriceMinor: 6_000,
+      lineTotalMinor: 6_000,
+    });
+    const newReceipt = await pay(cashier, nextOrder, 6000, 'paid-after-edit');
+
+    const historical = await cashier
+      .get(`/api/receipts/${originalReceipt.id}`)
+      .expect(200);
+    expect(historical.body.receipt.snapshot).toMatchObject({
+      totalMinor: 5_000,
+      items: [
+        {
+          name: 'شاي',
+          unitPriceMinor: 2_500,
+          quantity: 2,
+          lineTotalMinor: 5_000,
+        },
+      ],
+    });
+    expect(newReceipt.snapshot).toMatchObject({
+      totalMinor: 6_000,
+      items: [
+        {
+          name: 'شاي فاخر',
+          unitPriceMinor: 6_000,
+          quantity: 1,
+          lineTotalMinor: 6_000,
+        },
+      ],
+    });
+    const reportDay = DateTime.now().setZone('Africa/Cairo').startOf('day');
+    const reportQuery = `start=${reportDay.toISODate()}&end=${reportDay.plus({ days: 1 }).toISODate()}&timezone=Africa%2FCairo`;
+    const summary = await adminAgent
+      .get(`/api/admin/reports/summary?${reportQuery}`)
+      .expect(200);
+    expect(summary.body).toMatchObject({
+      revenueMinor: 11_000,
+      paidOrders: 2,
+      cashReceivedMinor: 11_000,
+      changeMinor: 0,
+    });
+    const topItems = await adminAgent
+      .get(`/api/admin/reports/top-items?${reportQuery}`)
+      .expect(200);
+    expect(topItems.body.items).toEqual([
+      { name: 'شاي', quantity: 2, revenueMinor: 5_000 },
+      { name: 'شاي فاخر', quantity: 1, revenueMinor: 6_000 },
+    ]);
+  });
+
   it('records print dialog/error attempts without changing financial records', async () => {
     const { cashier, order } = await fixture();
     const receipt = await pay(cashier, order, 5000, 'print-checkout');
@@ -320,7 +391,12 @@ describe('cash checkout and receipts', () => {
       'fixture-add',
       2,
     );
-    return { adminAgent, cashier, order };
+    return {
+      adminAgent,
+      cashier,
+      order,
+      menuItemId: menu.body.item.id as string,
+    };
   }
   async function login(username: string, password: string) {
     const agent = request.agent(app());

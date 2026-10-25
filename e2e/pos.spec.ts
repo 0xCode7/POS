@@ -74,13 +74,32 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
   await categoryForm
     .getByRole('button', { name: 'إضافة', exact: true })
     .click();
+  await page.getByRole('button', { name: 'تعديل تصنيف مشروبات' }).click();
+  const editCategoryDialog = page.getByRole('dialog', {
+    name: 'تعديل التصنيف',
+  });
+  await editCategoryDialog.getByLabel('اسم التصنيف').fill('مشروبات ساخنة');
+  await editCategoryDialog.getByRole('button', { name: 'حفظ التعديل' }).click();
+  await expect(page.getByText('تم تحديث التصنيف.')).toBeVisible();
   await page.getByRole('button', { name: '+ صنف جديد' }).click();
   const itemForm = page.locator('form').filter({ hasText: 'صنف جديد' });
-  await itemForm.getByLabel('التصنيف').selectOption({ label: 'مشروبات' });
+  await itemForm.getByLabel('التصنيف').selectOption({
+    label: 'مشروبات ساخنة',
+  });
   await itemForm.getByLabel('الاسم').fill('شاي');
   await itemForm.getByLabel('السعر (ج.م)').fill('25');
   await itemForm.getByRole('button', { name: 'إضافة الصنف' }).click();
   await expect(page.getByText('شاي', { exact: true }).last()).toBeVisible();
+  const menuCard = page.locator('.menu-card').filter({ hasText: 'شاي' });
+  await menuCard.getByRole('button', { name: 'تعديل' }).click();
+  const editItemDialog = page.getByRole('dialog', {
+    name: 'تعديل بيانات الصنف',
+  });
+  await editItemDialog.getByLabel('اسم الصنف').fill('شاي بالنعناع');
+  await editItemDialog.getByLabel('السعر بالجنيه').fill('26');
+  await editItemDialog.getByRole('button', { name: 'حفظ التعديلات' }).click();
+  await expect(menuCard).toContainText('شاي بالنعناع');
+  await expect(menuCard).toContainText('٢٦٫٠٠');
 
   await page.getByRole('button', { name: 'نقطة البيع' }).click();
   await page.keyboard.press('F2');
@@ -101,16 +120,19 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
   await page.getByRole('button', { name: 'المستخدمون' }).click();
   await page.getByRole('button', { name: 'نقطة البيع' }).click();
   await expect(page.locator('.order-heading h2')).toHaveText(orderNumber!);
-  await page.locator('.pos-product').filter({ hasText: 'شاي' }).click();
+  await page
+    .locator('.pos-product')
+    .filter({ hasText: 'شاي بالنعناع' })
+    .click();
   const noteButton = page.getByRole('button', { name: 'ملاحظة' });
   await noteButton.click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(noteButton).toBeFocused();
-  await page.getByRole('button', { name: 'زيادة كمية شاي' }).click();
+  await page.getByRole('button', { name: 'زيادة كمية شاي بالنعناع' }).click();
   await expect(page.getByLabel('الكمية')).toHaveText('2');
-  await page.getByRole('button', { name: 'تقليل كمية شاي' }).click();
+  await page.getByRole('button', { name: 'تقليل كمية شاي بالنعناع' }).click();
   await expect(page.getByLabel('الكمية')).toHaveText('1');
   await page.getByLabel('النقد المستلم (ج.م)').fill('30');
   await page.getByRole('button', { name: 'تحصيل نقدي وإصدار إيصال' }).click();

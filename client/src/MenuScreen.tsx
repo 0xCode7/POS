@@ -416,33 +416,41 @@ export function MenuScreen({
               {!row.isActive && ' · متوقف'}
             </button>
             {admin && (
-              <div className="category-actions">
+              <>
                 <button
-                  className="category-more"
-                  onClick={() =>
-                    setCategoryMenuId((current) =>
-                      current === row.id ? null : row.id,
-                    )
-                  }
-                  aria-label={`إدارة تصنيف ${row.name}`}
-                  aria-expanded={categoryMenuId === row.id}
+                  type="button"
+                  className="category-edit"
+                  onClick={() => void editCategory(row)}
+                  aria-label={`تعديل تصنيف ${row.name}`}
                 >
-                  ⋯
+                  تعديل
                 </button>
-                {categoryMenuId === row.id && (
-                  <div className="category-popover">
-                    <button onClick={() => void editCategory(row)}>
-                      تعديل التصنيف
-                    </button>
-                    <button
-                      className={row.isActive ? 'danger' : ''}
-                      onClick={() => void toggleCategory(row)}
-                    >
-                      {row.isActive ? 'إيقاف التصنيف' : 'تفعيل التصنيف'}
-                    </button>
-                  </div>
-                )}
-              </div>
+                <div className="category-actions">
+                  <button
+                    type="button"
+                    className="category-more"
+                    onClick={() =>
+                      setCategoryMenuId((current) =>
+                        current === row.id ? null : row.id,
+                      )
+                    }
+                    aria-label={`إدارة حالة تصنيف ${row.name}`}
+                    aria-expanded={categoryMenuId === row.id}
+                  >
+                    ⋯
+                  </button>
+                  {categoryMenuId === row.id && (
+                    <div className="category-popover">
+                      <button
+                        className={row.isActive ? 'danger' : ''}
+                        onClick={() => void toggleCategory(row)}
+                      >
+                        {row.isActive ? 'إيقاف التصنيف' : 'تفعيل التصنيف'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         ))}

@@ -543,6 +543,7 @@ h3 {
 }
 .category-strip > button,
 .category-filter,
+.category-edit,
 .category-more {
   min-height: 38px;
   padding: 7px 14px;
@@ -553,6 +554,7 @@ h3 {
 }
 .category-strip > button:hover:not(:disabled),
 .category-filter:hover:not(:disabled),
+.category-edit:hover:not(:disabled),
 .category-more:hover:not(:disabled),
 .category-strip > button.selected {
   border-color: var(--primary);
@@ -1000,6 +1002,18 @@ h3 {
 .category-strip .category-control > button {
   border: 0;
   background: transparent;
+}
+.category-strip .category-edit {
+  padding-inline: 10px;
+  border-inline-start: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.category-strip .category-edit:hover:not(:disabled) {
+  color: var(--gold-deep);
+  background: var(--accent-soft);
 }
 .category-control.selected {
   border-color: var(--primary);

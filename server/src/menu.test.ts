@@ -101,6 +101,21 @@ describe('menu migrations and API', () => {
       .set(csrf)
       .send(category('Drinks'))
       .expect(403);
+    const categoryRow = await createCategory(adminAgent, 'Drinks');
+    const item = await createMenuItem(adminAgent, categoryRow.id, {
+      name: 'Water',
+      priceMinor: 1_000,
+    });
+    await cashierAgent
+      .patch(`/api/admin/menu/categories/${categoryRow.id}`)
+      .set(csrf)
+      .send({ name: 'Soft drinks' })
+      .expect(403);
+    await cashierAgent
+      .patch(`/api/admin/menu/items/${item.id}`)
+      .set(csrf)
+      .send({ name: 'Sparkling water', priceMinor: 1_500 })
+      .expect(403);
     await adminAgent
       .post('/api/admin/menu/categories')
       .send(category('Drinks'))
@@ -113,10 +128,15 @@ describe('menu migrations and API', () => {
       .expect(403);
   });
 
-  it('creates and updates normalized categories and rejects duplicates', async () => {
+  it('updates a category in place, preserves linked items, and rejects invalid names', async () => {
     const { adminAgent } = await actors();
     const created = await createCategory(adminAgent, '  Hot   Drinks  ');
     expect(created.name).toBe('Hot Drinks');
+    const item = await createMenuItem(adminAgent, created.id, {
+      name: 'قهوة',
+      priceMinor: 5_000,
+    });
+    const other = await createCategory(adminAgent, 'Cold Drinks');
     await adminAgent
       .post('/api/admin/menu/categories')
       .set(csrf)
@@ -125,13 +145,31 @@ describe('menu migrations and API', () => {
     const updated = await adminAgent
       .patch(`/api/admin/menu/categories/${created.id}`)
       .set(csrf)
-      .send({ name: 'Coffee', isActive: false, sortOrder: 3 })
+      .send({ name: '  Coffee   Drinks ', isActive: false, sortOrder: 3 })
       .expect(200);
     expect(updated.body.category).toMatchObject({
-      name: 'Coffee',
+      id: created.id,
+      name: 'Coffee Drinks',
       isActive: false,
       sortOrder: 3,
     });
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT category_id AS categoryId FROM menu_items WHERE id = ?',
+        )
+        .get(item.id),
+    ).toEqual({ categoryId: created.id });
+    await adminAgent
+      .patch(`/api/admin/menu/categories/${created.id}`)
+      .set(csrf)
+      .send({ name: other.name })
+      .expect(409);
+    await adminAgent
+      .patch(`/api/admin/menu/categories/${created.id}`)
+      .set(csrf)
+      .send({ name: '   ' })
+      .expect(400);
     await adminAgent
       .patch(`/api/admin/menu/categories/${randomUUID()}`)
       .set(csrf)
@@ -166,6 +204,45 @@ describe('menu migrations and API', () => {
       name: 'Bad category',
       priceMinor: 100,
     }).expect(400);
+  });
+
+  it('updates an item in place and can move it to another category', async () => {
+    const { adminAgent } = await actors();
+    const drinks = await createCategory(adminAgent, 'مشروبات');
+    const meals = await createCategory(adminAgent, 'وجبات');
+    const item = await createMenuItem(adminAgent, drinks.id, {
+      name: 'شاي',
+      priceMinor: 2_500,
+    });
+
+    const updated = await adminAgent
+      .patch(`/api/admin/menu/items/${item.id}`)
+      .set(csrf)
+      .send({
+        categoryId: meals.id,
+        name: 'شاي بالنعناع',
+        description: '  ساخن   وطازج ',
+        priceMinor: 3_750,
+      })
+      .expect(200);
+    expect(updated.body.item).toMatchObject({
+      id: item.id,
+      categoryId: meals.id,
+      name: 'شاي بالنعناع',
+      description: 'ساخن وطازج',
+      priceMinor: 3_750,
+    });
+    const listed = await adminAgent
+      .get(`/api/menu/items?categoryId=${meals.id}`)
+      .expect(200);
+    expect(listed.body.items).toEqual([
+      expect.objectContaining({
+        id: item.id,
+        categoryId: meals.id,
+        categoryName: 'وجبات',
+        priceMinor: 3_750,
+      }),
+    ]);
   });
 
   it('filters search, category and pagination and rejects invalid pagination', async () => {
