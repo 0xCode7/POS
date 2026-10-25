@@ -132,7 +132,10 @@ try {
   # of its supported per-user path. The next installer intentionally receives
   # no /D argument, so customInit must discover this prior installation.
   Write-Host 'Upgrade test: installing the published legacy application into an isolated directory.'
-  Invoke-Installer $legacySetup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$installDirectory`"", "/LOG=`"$legacyInstallerLog`"") 'Published legacy installer' 180 $legacyInstallerLog
+  # Match the published release's own unattended installer acceptance command.
+  # Explicitly selecting the optional desktop task prevents Inno from trying to
+  # resolve an interactive task-selection state on a hosted Windows desktop.
+  Invoke-Installer $legacySetup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/TASKS="desktopicon"', "/DIR=`"$installDirectory`"", "/LOG=`"$legacyInstallerLog`"") 'Published legacy installer' 180 $legacyInstallerLog
   $legacyLauncher = Join-Path $installDirectory 'Launch-RestaurantPOS.vbs'
   $legacyStop = Join-Path $installDirectory 'Stop-RestaurantPOS.ps1'
   foreach ($required in @($legacyLauncher, $legacyStop, (Join-Path $installDirectory 'runtime\node.exe'))) {
