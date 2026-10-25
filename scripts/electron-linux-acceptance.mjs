@@ -212,13 +212,38 @@ async function assertPersistedSale() {
   );
 }
 
+async function createOrAssertPersistedPurchase() {
+  await page.getByRole('button', { name: 'المشتريات' }).click();
+  await page.getByRole('heading', { name: 'المشتريات', exact: true }).waitFor();
+
+  const purchaseName = 'توريد ترقية إلكترون';
+  const existing = page
+    .locator('.purchases-table')
+    .filter({ hasText: purchaseName });
+  if ((await existing.count()) === 0) {
+    await page.getByRole('button', { name: 'إضافة مشتريات' }).click();
+    const editor = page.getByRole('dialog', { name: 'إضافة مشتريات' });
+    await editor.getByLabel('اسم المشتريات').fill(purchaseName);
+    await editor.getByLabel('الكمية').fill('2');
+    await editor.getByLabel('الوحدة (اختياري)').fill('كيس');
+    await editor.getByLabel('سعر الوحدة (ج.م)').fill('12.5');
+    await editor.getByRole('button', { name: 'حفظ' }).click();
+  }
+  await page
+    .locator('.purchases-table')
+    .filter({ hasText: purchaseName })
+    .waitFor();
+}
+
 try {
   await launch();
   if (verifyExistingOnly) {
     await assertPersistedSale();
+    await createOrAssertPersistedPurchase();
     await close();
     await launch();
     await assertPersistedSale();
+    await createOrAssertPersistedPurchase();
   } else {
     await page
       .getByRole('heading', { name: 'إنشاء حساب المدير الأول' })

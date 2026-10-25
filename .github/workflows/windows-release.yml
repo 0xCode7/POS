@@ -87,3 +87,8 @@ jobs:
         shell: powershell
         run: |
           .\scripts\windows\Test-ElectronInstaller.ps1
+
+      - name: Verify published legacy installer upgrade preserves customer data
+        shell: powershell
+        run: |
+          .\scripts\windows\Test-ElectronUpgrade.ps1

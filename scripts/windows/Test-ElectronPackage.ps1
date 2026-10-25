@@ -43,6 +43,7 @@ try {
   foreach ($required in @(
     (Join-Path $app 'dist\server\maintenance\supervisor-cli.js'),
     (Join-Path $app 'dist\drizzle\0003_cash_settlement.sql'),
+    (Join-Path $app 'dist\drizzle\0005_purchases.sql'),
     (Join-Path $app 'dist\icons\icon.ico')
   )) {
     if (-not (Test-Path -LiteralPath $required)) {

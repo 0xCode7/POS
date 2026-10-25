@@ -65,6 +65,14 @@ supervisor lifecycle is revalidated; use the documented local recovery CLI.
 Electron printing opens its normal print dialog only: silent printing and
 physical output remain unverified.
 
+The Electron NSIS installer keeps the fixed app identity
+`com.efendina.restaurantpos` and the fixed upgrade GUID
+`5D39E18D-5FC2-4A76-8E89-3D864EC4A98D`. It detects the published legacy Inno
+Setup installation record and reuses that installation directory, while still
+using the same external `%LOCALAPPDATA%\\RestaurantPOS\\data` SQLite file.
+The portable ZIP is a standalone extraction; it is not an installer and does
+not perform an automatic in-place upgrade.
+
 `npm run test:electron:linux` uses a fresh temporary Electron user-data
 directory, creates an administrator and a paid order through the rendered UI,
 checks the receipt preview, report, and automatically created verified backup, then

@@ -15,6 +15,27 @@ directory outside the installation directory. The legacy material below is
 retained only as historical context until the Electron Windows acceptance run
 replaces it.
 
+## In-place upgrade safety
+
+The active Electron installer has a fixed `appId`
+`com.efendina.restaurantpos` and fixed NSIS GUID
+`5D39E18D-5FC2-4A76-8E89-3D864EC4A98D`; do not change either after release.
+Its migration bridge reads the v0.2.2 Inno Setup uninstall record and, when the
+legacy launcher is present, installs into that exact recorded directory. This
+is an application-file migration only. The authoritative database remains
+`%LOCALAPPDATA%\\RestaurantPOS\\data\\restaurant-pos.sqlite`, outside both
+old and new installation folders. A versioned startup migration applies
+`0005_purchases.sql` once; it does not reset users, orders, payments, or
+receipts.
+
+`Test-ElectronUpgrade.ps1` downloads the checksum-verified published v0.2.2
+installer into a disposable directory, creates an admin/menu/paid receipt with
+the old executable, installs the Electron installer without a `/D` override,
+then verifies the original records, migration count, one new purchase, complete
+shutdown/relaunch, and foreign keys. It is run by the Windows release workflow.
+The Portable ZIP is not an installer and never performs this migration
+automatically.
+
 Stage 9B defines a real Inno Setup installer, but this Linux environment has not built or executed it. Do not distribute it until the Windows release workflow or an interactive Windows x64 build machine produces the actual files and records test evidence.
 
 ## Build release artifacts on Windows x64

@@ -1,6 +1,6 @@
 {
   "name": "@restaurant-pos/desktop",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "description": "Offline Restaurant POS desktop application",
   "author": "Restaurant POS",
   "homepage": "https://github.com/0xCode7/POS",
@@ -73,8 +73,10 @@
     "nsis": {
       "artifactName": "RestaurantPOS-win-${arch}-nsis.${ext}",
       "include": "build/installer.nsh",
+      "guid": "5D39E18D-5FC2-4A76-8E89-3D864EC4A98D",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "مطعم أفندينا"

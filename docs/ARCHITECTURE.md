@@ -39,6 +39,15 @@ The production process acquires a data-directory runtime lock before opening SQL
 
 The database is created in an absolute, writable per-user OS data directory outside application/source files. Migrations are copied into the compiled server and applied at startup. Native `better-sqlite3` and `argon2` binaries must be validated for the exact Node 24 ABI, Windows architecture, and packaging format; otherwise the installer needs a native compilation toolchain. This remains a Windows-packaging risk, not a completed deployment.
 
+On Windows Electron sets its own settings/log path to
+`%LOCALAPPDATA%\\RestaurantPOS\\desktop` and injects
+`POS_DATA_DIR=%LOCALAPPDATA%\\RestaurantPOS\\data` into the trusted
+Supervisor, which passes it unchanged to Express. `database.ts` resolves that
+same directory to `restaurant-pos.sqlite`; neither the Electron package nor
+the NSIS installation directory is a database location. If two previously
+known database locations exist, Electron fails safely rather than choosing,
+copying, or resetting either one.
+
 The restaurant operates counter/takeaway service only. There are no table, seat, occupancy, or dine-in assignment entities anywhere in the schema or API.
 
 ### Implemented schema
