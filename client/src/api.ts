@@ -28,6 +28,17 @@ export type Page<T> = {
   items: T[];
   pagination: { page: number; limit: number; total: number; pages: number };
 };
+export type Purchase = {
+  id: string;
+  name: string;
+  quantityMilli: number;
+  unit: string | null;
+  unitPriceMinor: number;
+  totalMinor: number;
+  purchaseDate: string;
+  createdAt: number;
+  updatedAt: number;
+};
 export type OrderItem = {
   id: string;
   menuItemId: string;

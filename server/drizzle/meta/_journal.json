@@ -36,6 +36,13 @@
       "when": 1792282200000,
       "tag": "0004_reporting_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792282800000,
+      "tag": "0005_purchases",
+      "breakpoints": true
     }
   ]
 }

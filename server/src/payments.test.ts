@@ -127,7 +127,7 @@ describe('cash checkout and receipts', () => {
       database.sqlite
         .prepare('SELECT COUNT(*) count FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ count: 5 });
+    ).toEqual({ count: 6 });
   });
 
   it('computes change and rejects underpayment or empty checkout without partial records', async () => {

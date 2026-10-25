@@ -254,8 +254,44 @@ export const printAttempts = sqliteTable(
   ],
 );
 
+/**
+ * Administrative operating costs. These records intentionally have no
+ * relationship to menu items, inventory, orders, payments, or sales reports.
+ */
+export const purchases = sqliteTable(
+  'purchases',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    // Quantity is stored in thousandths so fractional units remain exact.
+    quantityMilli: integer('quantity_milli').notNull(),
+    unit: text('unit'),
+    unitPriceMinor: integer('unit_price_minor').notNull(),
+    totalMinor: integer('total_minor').notNull(),
+    // A Cairo-local calendar date chosen by the administrator (YYYY-MM-DD).
+    purchaseDate: text('purchase_date').notNull(),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    updatedByUserId: text('updated_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+    deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+    deletedByUserId: text('deleted_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+  },
+  (table) => [
+    index('purchases_active_date_idx').on(table.deletedAt, table.purchaseDate),
+    index('purchases_name_idx').on(table.name),
+  ],
+);
+
 export type UserRole = 'admin' | 'cashier';
 export type User = typeof users.$inferSelect;
 export type MenuCategory = typeof menuCategories.$inferSelect;
 export type MenuItem = typeof menuItems.$inferSelect;
 export type Order = typeof orders.$inferSelect;
+export type Purchase = typeof purchases.$inferSelect;

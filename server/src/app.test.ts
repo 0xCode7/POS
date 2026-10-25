@@ -52,7 +52,7 @@ describe('database and authentication API', () => {
     const migrations = database.sqlite
       .prepare('SELECT COUNT(*) AS count FROM __drizzle_migrations')
       .get() as { count: number };
-    expect(migrations.count).toBe(5);
+    expect(migrations.count).toBe(6);
   });
 
   it('allows first-admin setup exactly once under concurrent requests', async () => {

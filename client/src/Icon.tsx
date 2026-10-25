@@ -4,6 +4,7 @@ type IconName =
   | 'brand'
   | 'pos'
   | 'orders'
+  | 'purchases'
   | 'menu'
   | 'reports'
   | 'backups'
@@ -26,6 +27,12 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4" />
       <path d="M9 3V2h6v1" />
+    </>
+  ),
+  purchases: (
+    <>
+      <path d="M5 7h14l-1 14H6L5 7Z" />
+      <path d="M8 7V5a4 4 0 0 1 8 0v2M8 12h8M10 16h4" />
     </>
   ),
   menu: (

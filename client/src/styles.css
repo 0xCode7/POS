@@ -389,6 +389,7 @@ h3 {
 .pos-screen,
 .menu-screen,
 .reports-screen,
+.purchases-screen,
 .orders-screen,
 .backups-screen,
 .users {
@@ -1202,6 +1203,106 @@ h3 {
   border-radius: var(--radius-md);
   background: var(--surface);
 }
+
+/* Purchases: administrative operating costs, intentionally separate from sales. */
+.purchases-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.purchases-history {
+  padding: 18px;
+}
+.purchases-history .panel-heading > div {
+  display: grid;
+  gap: 2px;
+}
+.purchases-filters {
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 1fr) minmax(155px, 190px) minmax(155px, 190px)
+    auto;
+  align-items: end;
+  gap: 11px;
+  margin: 16px 0 7px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--soft);
+}
+.purchases-filters button {
+  white-space: nowrap;
+}
+.purchases-table-wrap {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.purchases-table {
+  width: 100%;
+  min-width: 810px;
+  border-collapse: collapse;
+  text-align: start;
+}
+.purchases-table th,
+.purchases-table td {
+  padding: 13px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.purchases-table th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.purchases-table tbody tr:hover {
+  background: var(--soft);
+}
+.purchases-table td:first-child {
+  min-width: 150px;
+  white-space: normal;
+}
+.purchase-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 7px;
+}
+.purchase-actions button {
+  min-height: 35px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+.purchase-editor {
+  width: min(100%, 650px);
+}
+.purchase-editor form {
+  gap: 16px;
+}
+.purchase-form-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+.purchase-name-field {
+  grid-column: 1 / -1;
+}
+.purchase-total-preview {
+  display: grid;
+  gap: 3px;
+  padding: 13px;
+  border: 1px solid var(--gold-line);
+  border-radius: var(--radius-sm);
+  background: var(--gold-soft);
+}
+.purchase-total-preview span,
+.purchase-total-preview small {
+  color: var(--muted);
+}
+.purchase-total-preview strong {
+  color: var(--gold-deep);
+  font-size: 1.3rem;
+}
+.purchase-form-error {
+  margin: 0;
+}
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1711,6 +1812,9 @@ h3 {
   .backup-kpis {
     grid-template-columns: 1fr;
   }
+  .purchases-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .backup-history-panel .panel-heading {
     align-items: stretch;
     flex-direction: column;
@@ -1802,6 +1906,13 @@ h3 {
   .create-user,
   .report-filter,
   .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .purchases-kpis {
+    grid-template-columns: 1fr;
+  }
+  .purchases-filters,
+  .purchase-form-fields {
     grid-template-columns: 1fr;
   }
   .item-fields button {

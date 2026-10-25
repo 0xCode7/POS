@@ -89,7 +89,7 @@ describe('menu migrations and API', () => {
       database.sqlite
         .prepare('SELECT COUNT(*) AS count FROM __drizzle_migrations')
         .get(),
-    ).toEqual({ count: 5 });
+    ).toEqual({ count: 6 });
   });
 
   it('requires authentication and admin permission for writes', async () => {

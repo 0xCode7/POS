@@ -7,6 +7,7 @@ import { useSiteDialog } from './SiteDialog';
 import { Icon } from './Icon';
 import { OrdersScreen } from './OrdersScreen';
 import { BackupScreen } from './BackupScreen';
+import { PurchasesScreen } from './PurchasesScreen';
 import { Notice } from './Notice';
 type Screen = 'loading' | 'setup' | 'login' | 'app' | 'offline';
 
@@ -158,7 +159,7 @@ function AuthenticatedApp({
   onSessionExpired: () => void;
 }) {
   const [view, setView] = useState<
-    'pos' | 'orders' | 'reports' | 'backups' | 'menu' | 'users'
+    'pos' | 'orders' | 'purchases' | 'reports' | 'backups' | 'menu' | 'users'
   >('pos');
   return (
     <div className="app-shell" dir="rtl" lang="ar">
@@ -207,6 +208,17 @@ function AuthenticatedApp({
             </span>
             <span>المنيو</span>
           </button>
+          {user.role === 'admin' && (
+            <button
+              className={view === 'purchases' ? 'nav-active' : ''}
+              onClick={() => setView('purchases')}
+            >
+              <span className="nav-icon">
+                <Icon name="purchases" />
+              </span>
+              <span>المشتريات</span>
+            </button>
+          )}
           {user.role === 'admin' && (
             <button
               className={view === 'orders' ? 'nav-active' : ''}
@@ -266,6 +278,9 @@ function AuthenticatedApp({
               </div>
               <div className="view-panel" hidden={view !== 'orders'}>
                 <OrdersScreen onSessionExpired={onSessionExpired} />
+              </div>
+              <div className="view-panel" hidden={view !== 'purchases'}>
+                <PurchasesScreen onSessionExpired={onSessionExpired} />
               </div>
               <div className="view-panel" hidden={view !== 'backups'}>
                 <BackupScreen onSessionExpired={onSessionExpired} />
