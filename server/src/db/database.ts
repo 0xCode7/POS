@@ -54,7 +54,15 @@ export function openDatabase(
     throw new Error('POS_MIGRATIONS_DIR must be an absolute path.');
   const migrationsFolder =
     configuredMigrations ?? path.resolve(moduleDirectory, '../../drizzle');
-  migrate(db, { migrationsFolder });
+  try {
+    migrate(db, { migrationsFolder });
+  } catch (error) {
+    // Do not retain an open SQLite/WAL handle when an upgrade migration fails.
+    // This lets the caller preserve, inspect, or restore the same database
+    // safely; no partially applied migration is returned as an application DB.
+    sqlite.close();
+    throw error;
+  }
 
   return { db, sqlite, filename };
 }

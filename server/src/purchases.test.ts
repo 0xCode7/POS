@@ -341,10 +341,16 @@ describe('admin purchases management', () => {
     database.sqlite.pragma('wal_checkpoint(TRUNCATE)');
     database.sqlite.close();
     const copiedDirectory = path.join(directory, 'legacy-copy');
+    const failingDirectory = path.join(directory, 'legacy-copy-failing');
     fs.mkdirSync(copiedDirectory);
+    fs.mkdirSync(failingDirectory);
     const sourceDatabase = path.join(directory, 'restaurant-pos.sqlite');
     const copiedDatabase = path.join(copiedDirectory, 'restaurant-pos.sqlite');
     fs.copyFileSync(sourceDatabase, copiedDatabase);
+    fs.copyFileSync(
+      sourceDatabase,
+      path.join(failingDirectory, 'restaurant-pos.sqlite'),
+    );
 
     const legacy = new Database(sourceDatabase, { readonly: true });
     expect(
@@ -365,6 +371,55 @@ describe('admin purchases management', () => {
         .get(checkout.body.receipt.id),
     ).toEqual({ id: checkout.body.receipt.id });
     legacy.close();
+
+    // A failing copy proves the 0005 transaction does not leave a partial
+    // purchases table or migration record. The untouched source remains the
+    // recovery point; a real installation never alters it before validation.
+    const failingMigrations = path.join(directory, 'failing-migrations');
+    fs.mkdirSync(path.join(failingMigrations, 'meta'), { recursive: true });
+    for (const name of [
+      '0000_auth.sql',
+      '0001_menu.sql',
+      '0002_orders.sql',
+      '0003_cash_settlement.sql',
+      '0004_reporting_indexes.sql',
+      '0005_purchases.sql',
+    ]) {
+      const contents = fs.readFileSync(path.join(source, name), 'utf8');
+      fs.writeFileSync(
+        path.join(failingMigrations, name),
+        name === '0005_purchases.sql'
+          ? `${contents}\nTHIS IS INTENTIONALLY INVALID SQL;\n`
+          : contents,
+      );
+    }
+    fs.writeFileSync(
+      path.join(failingMigrations, 'meta', '_journal.json'),
+      fs.readFileSync(path.join(source, 'meta', '_journal.json')),
+    );
+    expect(() =>
+      openDatabase({
+        dataDirectory: failingDirectory,
+        migrationsFolder: failingMigrations,
+      }),
+    ).toThrow();
+    const failedCopy = new Database(
+      path.join(failingDirectory, 'restaurant-pos.sqlite'),
+      { readonly: true },
+    );
+    expect(
+      failedCopy
+        .prepare('SELECT COUNT(*) AS count FROM __drizzle_migrations')
+        .get(),
+    ).toEqual({ count: 5 });
+    expect(
+      failedCopy
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'purchases'",
+        )
+        .get(),
+    ).toBeUndefined();
+    failedCopy.close();
 
     database = openDatabase({ dataDirectory: copiedDirectory });
     expect(
