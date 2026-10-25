@@ -203,6 +203,21 @@ test('complete admin and cashier POS workflow in real Chromium', async ({
   await expect(page.locator('.purchases-table')).toContainText('أرز فاخر');
   await page.getByLabel('بحث عن مشتريات').fill('فاخر');
   await expect(page.locator('.purchases-table')).toContainText('أرز فاخر');
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1366, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport);
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  }
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.screenshot({
     path: 'test-results/purchases-management-1366x768.png',
